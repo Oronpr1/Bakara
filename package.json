@@ -13,6 +13,7 @@
     "db:up": "docker compose up -d",
     "db:migrate": "pnpm --filter @al/db migrate",
     "db:seed": "pnpm --filter @al/db seed",
+    "db:create-admin": "pnpm --filter @al/db create-admin",
     "dev": "pnpm --filter @al/web dev"
   },
   "devDependencies": {
