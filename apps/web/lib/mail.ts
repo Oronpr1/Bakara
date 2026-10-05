@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import { getGraphClient } from "./m365/config";
+import { GraphMailer } from "./m365/mail";
 
 export interface MailMessage {
   to: string;
@@ -11,12 +13,12 @@ export interface Mailer {
   send(message: MailMessage): Promise<void>;
 }
 
-/**
- * Development and test mailer. Production mail goes through the college's own Microsoft 365
- * mailbox (Graph sendMail), added with the Microsoft 365 integration.
- */
+/** Development mailer (Mailpit), or a plain SMTP relay where Microsoft 365 is not used. */
 class SmtpMailer implements Mailer {
-  private transport = nodemailer.createTransport(process.env.SMTP_URL!);
+  private transport;
+  constructor(url: string) {
+    this.transport = nodemailer.createTransport(url);
+  }
   async send(m: MailMessage) {
     await this.transport.sendMail({ from: process.env.MAIL_FROM ?? "letters@example.test", ...m });
   }
@@ -31,8 +33,18 @@ class LogMailer implements Mailer {
 
 let mailer: Mailer | undefined;
 
+/**
+ * Production mail goes through the college's own Microsoft 365 shared mailbox (Graph sendMail)
+ * when M365_MAILBOX is set; otherwise SMTP_URL; otherwise the log (refused in production).
+ */
+export function mailerFromEnv(env: Record<string, string | undefined> = process.env): Mailer {
+  if (env.M365_MAILBOX) return new GraphMailer(getGraphClient(), env.M365_MAILBOX);
+  if (env.SMTP_URL) return new SmtpMailer(env.SMTP_URL);
+  return new LogMailer();
+}
+
 export function getMailer(): Mailer {
-  mailer ??= process.env.SMTP_URL ? new SmtpMailer() : new LogMailer();
+  mailer ??= mailerFromEnv();
   return mailer;
 }
 
