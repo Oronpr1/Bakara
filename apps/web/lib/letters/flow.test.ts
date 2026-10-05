@@ -118,12 +118,14 @@ describe.skipIf(!process.env.DATABASE_URL)("a letter from upload to approved for
     await setCommentStatus(adv!, c.id, { to: "RESOLVED_NO_CHANGE", note: "הימים כן תקינים" });
     expect(await stageOf(letterId)).toBe("ACADEMIC_ROUND");
 
-    // A new version keeps earlier approvals; both academics must approve, unless one is removed.
+    // A new version keeps earlier approvals; every remaining academic must approve.
+    // The control manager removes one academic; the other's approval then completes the round
+    // (and notifies the control manager, who is not the actor this time).
     await uploadVersion(adv!, letterId, { docx, pdf: await pdf(3), note: "עדכון תאריכים" });
-    await approveLetter(ac1!, letterId);
-    expect(await stageOf(letterId)).toBe("ACADEMIC_ROUND");
     await expect(removeApprover(adv!, letterId, ac2!.userId, "ACADEMIC", "לא נדרש")).rejects.toThrow(/הרשאה/);
     await removeApprover(cm!, letterId, ac2!.userId, "ACADEMIC", "לא נדרש");
+    expect(await stageOf(letterId)).toBe("ACADEMIC_ROUND");
+    await approveLetter(ac1!, letterId);
     expect(await stageOf(letterId)).toBe("FINAL_REVIEW");
 
     expect(await performTransition(cm!, letterId, "FINAL_APPROVE")).toBe("APPROVED");
