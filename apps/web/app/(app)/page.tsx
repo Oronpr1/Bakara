@@ -19,7 +19,7 @@ export default async function HomePage() {
       <section className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold">שלום {user.name}</h1>
         <p className="text-muted">
-          {total === 0 ? "אין כרגע מכתבים שממתינים לך." : `${total} מכתבים ממתינים לך.`}
+          {total === 0 ? "אין כרגע מכתבים שממתינים לך." : total === 1 ? "מכתב אחד ממתין לך." : `${total} מכתבים ממתינים לך.`}
         </p>
       </section>
 
