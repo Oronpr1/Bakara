@@ -11,6 +11,10 @@ const securityHeaders = [
 const config: NextConfig = {
   transpilePackages: ["@al/domain", "@al/db"],
   poweredByHeader: false,
+  experimental: {
+    // A version upload carries a DOCX and a PDF of up to 30MB each, plus multipart overhead.
+    serverActions: { bodySizeLimit: "62mb" },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
