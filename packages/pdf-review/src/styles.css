@@ -1,0 +1,244 @@
+/*
+ * @al/pdf-review styles. Every colour is a CSS variable on .alpr-root; a host
+ * overrides them on .alpr-root (or any ancestor via its own selector).
+ * By default the theme follows prefers-color-scheme; data-theme="light" on
+ * .alpr-root opts out of dark, data-theme="dark" on it (or an ancestor) forces it.
+ */
+.alpr-root {
+  --alpr-bg: #eceef1;
+  --alpr-surface: #ffffff;
+  --alpr-fg: #1c2024;
+  --alpr-muted: #60646c;
+  --alpr-border: #d9dce1;
+  --alpr-focus: #0b6bcb;
+  --alpr-accent: #0b6bcb;
+  --alpr-accent-fg: #ffffff;
+  --alpr-open: #d92d20;
+  --alpr-open-fill: rgb(217 45 32 / 0.12);
+  --alpr-resolved: #8b8d98;
+  --alpr-resolved-fill: rgb(139 141 152 / 0.06);
+  --alpr-selected: #f5a524;
+  --alpr-selected-fill: rgb(245 165 36 / 0.2);
+  --alpr-draft: #0b6bcb;
+  --alpr-draft-fill: rgb(11 107 203 / 0.14);
+  --alpr-page-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
+  --alpr-radius: 6px;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--alpr-bg);
+  color: var(--alpr-fg);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .alpr-root:not([data-theme="light"]) {
+    --alpr-bg: #18191b;
+    --alpr-surface: #212225;
+    --alpr-fg: #edeef0;
+    --alpr-muted: #b0b4ba;
+    --alpr-border: #363a3f;
+    --alpr-focus: #5eb1ef;
+    --alpr-accent: #3b8eea;
+    --alpr-page-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+  }
+}
+.alpr-root[data-theme="dark"],
+[data-theme="dark"] .alpr-root {
+  --alpr-bg: #18191b;
+  --alpr-surface: #212225;
+  --alpr-fg: #edeef0;
+  --alpr-muted: #b0b4ba;
+  --alpr-border: #363a3f;
+  --alpr-focus: #5eb1ef;
+  --alpr-accent: #3b8eea;
+  --alpr-page-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+}
+
+.alpr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 6px 12px;
+  background: var(--alpr-surface);
+  border-block-end: 1px solid var(--alpr-border);
+}
+.alpr-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.alpr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--alpr-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.alpr-btn:hover:not(:disabled) {
+  border-color: var(--alpr-border);
+}
+.alpr-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.alpr-btn[aria-pressed="true"] {
+  background: var(--alpr-accent);
+  color: var(--alpr-accent-fg);
+}
+.alpr-btn:focus-visible,
+.alpr-page-input:focus-visible,
+.alpr-scroller:focus-visible,
+.alpr-box:focus-visible {
+  outline: 2px solid var(--alpr-focus);
+  outline-offset: 2px;
+}
+.alpr-page-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--alpr-muted);
+}
+.alpr-page-input {
+  width: 3.5em;
+  height: 30px;
+  padding: 0 4px;
+  border: 1px solid var(--alpr-border);
+  border-radius: var(--alpr-radius);
+  background: var(--alpr-bg);
+  color: var(--alpr-fg);
+  font: inherit;
+  text-align: center;
+}
+.alpr-zoom {
+  min-width: 3.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--alpr-muted);
+}
+.alpr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.alpr-scroller {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* the browser keeps panning; pinch zoom is ours */
+  touch-action: pan-x pan-y;
+}
+.alpr-pages {
+  position: relative;
+  margin-inline: auto;
+}
+.alpr-message {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--alpr-muted);
+}
+.alpr-error {
+  color: var(--alpr-open);
+}
+
+.alpr-page {
+  position: absolute;
+  background: #fff;
+  box-shadow: var(--alpr-page-shadow);
+}
+.alpr-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.alpr-overlay {
+  position: absolute;
+  inset: 0;
+}
+.alpr-overlay[data-drawing] {
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.alpr-box {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--alpr-open);
+  border-radius: 2px;
+  background: var(--alpr-open-fill);
+  cursor: pointer;
+}
+.alpr-box[data-resolved] {
+  border: 1px dashed var(--alpr-resolved);
+  background: var(--alpr-resolved-fill);
+  opacity: 0.7;
+}
+.alpr-box[data-selected] {
+  border: 3px solid var(--alpr-selected);
+  background: var(--alpr-selected-fill);
+  opacity: 1;
+  z-index: 1;
+}
+.alpr-overlay[data-drawing] .alpr-box {
+  pointer-events: none;
+}
+.alpr-box-label {
+  position: absolute;
+  inset-block-start: -2px;
+  inset-inline-end: -2px;
+  transform: translateY(-100%);
+  padding: 0 5px;
+  border-radius: 3px 3px 0 0;
+  background: var(--alpr-open);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.alpr-box[data-resolved] .alpr-box-label {
+  background: var(--alpr-resolved);
+}
+.alpr-box[data-selected] .alpr-box-label {
+  background: var(--alpr-selected);
+  color: #1c2024;
+}
+
+.alpr-draft {
+  position: absolute;
+  border: 2px dashed var(--alpr-draft);
+  background: var(--alpr-draft-fill);
+  pointer-events: none;
+}
+.alpr-draft[data-pending] {
+  border-style: solid;
+}
+
+@media (max-width: 600px) {
+  .alpr-btn-text {
+    display: none;
+  }
+  .alpr-toolbar {
+    gap: 4px 8px;
+    padding: 4px 8px;
+  }
+}

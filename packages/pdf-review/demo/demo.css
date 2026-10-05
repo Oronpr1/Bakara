@@ -1,0 +1,76 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: system-ui, sans-serif;
+  background: #f6f7f9;
+  color: #1c2024;
+}
+.demo {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  height: 100%;
+}
+.demo-viewer {
+  min-width: 0;
+  min-height: 0;
+}
+.demo-side {
+  overflow: auto;
+  padding: 12px 16px;
+  border-inline-start: 1px solid #d9dce1;
+}
+.demo-side h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.demo-side ol {
+  padding: 0;
+  list-style: none;
+}
+.demo-side li {
+  margin-block: 8px;
+}
+.demo-side button {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d9dce1;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.demo-side button[aria-pressed="true"] {
+  border-color: #f5a524;
+  background: #fff6e5;
+}
+.demo-side img {
+  display: block;
+  max-width: 100%;
+  margin-top: 4px;
+  border: 1px solid #d9dce1;
+}
+@media (max-width: 720px) {
+  .demo {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 35%;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #111113;
+    color: #edeef0;
+  }
+  .demo-side button {
+    background: #212225;
+    color: inherit;
+    border-color: #363a3f;
+  }
+  .demo-side button[aria-pressed="true"] {
+    background: #3a2a0a;
+  }
+}
