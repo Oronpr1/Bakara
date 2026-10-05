@@ -14,6 +14,8 @@ const config: NextConfig = {
   experimental: {
     // A version upload carries a DOCX and a PDF of up to 30MB each, plus multipart overhead.
     serverActions: { bodySizeLimit: "62mb" },
+    // If a proxy is ever added, it must not truncate add-in uploads (two files of up to 30MB).
+    proxyClientMaxBodySize: "62mb",
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
