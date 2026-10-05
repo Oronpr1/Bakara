@@ -11,6 +11,10 @@ const securityHeaders = [
 const config: NextConfig = {
   transpilePackages: ["@al/domain", "@al/db"],
   poweredByHeader: false,
+  experimental: {
+    // If a proxy is ever added, it must not truncate add-in uploads (two files of up to 30MB).
+    proxyClientMaxBodySize: "62mb",
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
