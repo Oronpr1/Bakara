@@ -3,7 +3,7 @@ import { formatBytes, formatDateTime } from "@/lib/format";
 import type { LetterDetail } from "@/lib/letters/queries";
 import { UploadForm } from "./UploadForm";
 
-const SOURCE_LABELS = { ADDIN: "מתוסף Word", UPLOAD: "העלאה ידנית", GRAPH: "המרה אוטומטית" } as const;
+const SOURCE_LABELS = { ADDIN: "מתוסף Word", UPLOAD: "העלאה ידנית", GRAPH: "מ-SharePoint" } as const;
 
 export function Versions({ detail, canUpload }: { detail: LetterDetail; canUpload: boolean }) {
   const { versions, names, row } = detail;

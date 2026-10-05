@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { formObject, runAction } from "@/lib/actions";
 import { createComment, replyToComment, setCommentStatus } from "@/lib/letters/comments";
+import { openInWord, versionFromSharePoint } from "@/lib/letters/live-file";
 import {
   addAcademicApprover,
   approveLetter,
@@ -56,6 +57,27 @@ export async function uploadVersionAction(_prev: ActionResult, form: FormData): 
       }),
     paths,
     "הגרסה הועלתה",
+  );
+}
+
+/** Creates the SharePoint working file the first time; the page then links to Word with it. */
+export async function openInWordAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ letterId }),
+    formObject(form),
+    (actor, d) => openInWord(actor, d.letterId),
+    paths,
+    "הקובץ נוצר ב-SharePoint. אפשר לפתוח אותו ב-Word.",
+  );
+}
+
+export async function versionFromSharePointAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ letterId, note: z.string().trim().max(2000).optional() }),
+    formObject(form),
+    (actor, d) => versionFromSharePoint(actor, d.letterId, d.note),
+    paths,
+    "הגרסה נוצרה מקובץ ה-Word",
   );
 }
 

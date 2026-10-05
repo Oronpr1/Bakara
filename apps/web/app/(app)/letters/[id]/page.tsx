@@ -5,14 +5,17 @@ import { z } from "zod";
 import { StagePill, Tag } from "@/components/Pills";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
-import { AppError } from "@/lib/errors";
+import { AppError, userMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
+import { liveFileStatus } from "@/lib/letters/live-file";
 import { getLetterDetail, isOverdue, waitingOn } from "@/lib/letters/queries";
+import { getDocumentHost } from "@/lib/m365/config";
 import { ApproversPanel } from "./ApproversPanel";
 import { History } from "./History";
 import { StageStrip } from "./StageStrip";
 import { Versions } from "./Versions";
 import { ReviewRoom } from "./ReviewRoom";
+import { WordFile } from "./WordFile";
 import { WorkflowActions } from "./WorkflowActions";
 
 export const metadata = { title: "מכתב · מכתבי קבלה" };
@@ -35,6 +38,14 @@ export default async function LetterPage({
   const { row, state, season, names } = detail;
   const can = (a: LetterAction) => canOnLetter(actor, a, state);
   const history = tab === "history";
+  // "Edit in Word" only with Microsoft 365, and only while versions may be added (not once approved).
+  const showWord = !history && getDocumentHost() !== null && can("UPLOAD_VERSION");
+  const word = showWord
+    ? await liveFileStatus(row).then(
+        (status) => ({ status, error: null }),
+        (e: unknown) => ({ status: null, error: userMessage(e) }),
+      )
+    : null;
   const name = (uid: string | null) => (uid && names.get(uid)) || "—";
   const roomComments = detail.comments.map((c, i) => ({
     id: c.id,
@@ -116,6 +127,15 @@ export default async function LetterPage({
       ) : (
         <div className="flex flex-col gap-6">
           <WorkflowActions detail={detail} can={can} />
+          {word && (
+            <WordFile
+              letterId={row.id}
+              webUrl={row.sharepointWebUrl}
+              status={word.status}
+              error={word.error}
+              latestVersion={row.latestVersion}
+            />
+          )}
           <ReviewRoom
             letterId={row.id}
             versions={detail.versions.map((v) => ({ id: v.id, number: v.number }))}
