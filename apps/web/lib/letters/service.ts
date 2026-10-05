@@ -22,6 +22,7 @@ import { PDFDocument } from "pdf-lib";
 import { AppError, forbidden } from "../errors";
 import { audit, notify } from "../notify";
 import { getFileStore, sha256 } from "../storage";
+import { syncLiveFileLock } from "./live-file-lock";
 import { loadLetter, type LetterRow, type Tx } from "./state";
 
 const { users, seasons, letterRequests, approverAssignments, approvals, versions } = schema;
@@ -327,11 +328,19 @@ function isPdf(bytes: Uint8Array) {
 /**
  * Stores a new official version: the exact DOCX and its review PDF, frozen with their hashes.
  * Comments and approvals are kept; the people on the letter are told a new version exists.
+ * `sharepointCTag` is the content tag of the SharePoint working file the version was taken
+ * from, so the letter page can tell when the file has changed since.
  */
 export async function uploadVersion(
   actor: Actor,
   letterId: string,
-  input: { docx: Uint8Array; pdf: Uint8Array; note?: string; pdfSource?: "UPLOAD" | "ADDIN" | "GRAPH" },
+  input: {
+    docx: Uint8Array;
+    pdf: Uint8Array;
+    note?: string;
+    pdfSource?: "UPLOAD" | "ADDIN" | "GRAPH";
+    sharepointCTag?: string;
+  },
   db: Db = getDb(),
 ) {
   const { docx, pdf } = input;
@@ -373,8 +382,11 @@ export async function uploadVersion(
         createdBy: actor.userId,
       })
       .returning();
-    await tx.update(letterRequests).set({ latestVersion: number }).where(eq(letterRequests.id, letterId));
-    await audit(tx, actor.userId, "VERSION_UPLOADED", { letterId, seasonId: row.seasonId }, { number });
+    await tx
+      .update(letterRequests)
+      .set({ latestVersion: number, ...(input.sharepointCTag ? { sharepointVersionCTag: input.sharepointCTag } : {}) })
+      .where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "VERSION_UPLOADED", { letterId, seasonId: row.seasonId }, { number, source: version!.pdfSource });
     if (row.stage !== "DRAFT")
       await notify(
         tx,
@@ -397,13 +409,16 @@ export async function performTransition(
   reason?: string,
   db: Db = getDb(),
 ) {
-  return db.transaction(async (tx) => {
+  const { from, to } = await db.transaction(async (tx) => {
     const { row, state } = await loadLetter(tx, letterId, { lock: true });
     ensure(actor, action, state);
     const target = transition(state, action, { reason });
     if (reason) await audit(tx, actor.userId, action, { letterId, seasonId: row.seasonId }, { reason });
-    return setStage(tx, row, state, target, actor.userId);
+    return { from: row.stage, to: await setStage(tx, row, state, target, actor.userId) };
   });
+  // After the commit: a slow or failing SharePoint call must not hold or undo the approval.
+  await syncLiveFileLock(letterId, from, to, actor.userId, { db });
+  return to;
 }
 
 /** Records the actor's approval for every slot they may approve now. */

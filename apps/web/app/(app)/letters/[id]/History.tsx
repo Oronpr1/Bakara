@@ -27,7 +27,15 @@ export function describeEvent(e: Event, names: Map<string, string>): { text: str
     case "STAGE_CHANGED":
       return { text: `מעבר שלב: ${stage(d.from)} ← ${stage(d.to)}` };
     case "VERSION_UPLOADED":
-      return { text: `העלאת גרסה ${d.number}` };
+      return { text: d.source === "GRAPH" ? `יצירת גרסה ${d.number} מקובץ ה-Word ב-SharePoint` : `העלאת גרסה ${d.number}` };
+    case "SHAREPOINT_FILE_CREATED":
+      return { text: d.fromVersion ? `יצירת קובץ Word ב-SharePoint מגרסה ${d.fromVersion}` : "יצירת קובץ Word ב-SharePoint" };
+    case "SHAREPOINT_FILE_LOCKED":
+      return { text: "נעילת קובץ ה-Word לעריכה" };
+    case "SHAREPOINT_FILE_UNLOCKED":
+      return { text: "שחרור קובץ ה-Word לעריכה" };
+    case "SHAREPOINT_LOCK_FAILED":
+      return { text: d.readOnly ? "נעילת קובץ ה-Word נכשלה" : "שחרור קובץ ה-Word נכשל" };
     case "APPROVED":
       return { text: `אישור על גרסה ${d.version}` };
     case "APPROVER_REPLACED":

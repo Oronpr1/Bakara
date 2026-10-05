@@ -2,7 +2,7 @@ import { getDb, schema, type Db } from "@al/db";
 import { canOnLetter, isOpenComment, STAGE_LABELS, type Actor, type Stage } from "@al/domain";
 import { asc, eq, isNotNull } from "drizzle-orm";
 import { AppError, notFound } from "../errors";
-import { GraphClient } from "../m365/graph";
+import { getGraphClient, graphConfigured } from "../m365/config";
 import { getFileStore } from "../storage";
 import { loadLetter } from "../letters/state";
 import { documentUrlKey, graphShareId } from "./url";
@@ -17,14 +17,11 @@ export type DriveItemResolver = (url: string) => Promise<{ driveId: string; item
  * Microsoft 365 is configured and the plain URL comparison found nothing.
  */
 export function graphResolverFromEnv(env: Record<string, string | undefined> = process.env): DriveItemResolver | undefined {
-  const configured = env.M365_USE_MANAGED_IDENTITY === "true" || (env.M365_TENANT_ID && env.M365_CLIENT_ID);
-  if (!configured) return undefined;
-  let graph: GraphClient | undefined;
+  if (!graphConfigured(env)) return undefined;
   return async (url) => {
     if (!/^https:\/\/[^/]+\.sharepoint\.com\//i.test(url)) return null;
-    graph ??= new GraphClient();
     try {
-      const item = await graph.json<{ id: string; parentReference: { driveId: string } }>(
+      const item = await getGraphClient().json<{ id: string; parentReference: { driveId: string } }>(
         "GET",
         `/shares/${graphShareId(url)}/driveItem?$select=id,parentReference`,
       );

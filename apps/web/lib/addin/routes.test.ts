@@ -9,7 +9,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GET as getLetter, OPTIONS as letterOptions } from "@/app/api/addin/letter/route";
 import { POST as postVersion } from "@/app/api/addin/letters/[id]/versions/route";
 import { GET as getSnapshot } from "@/app/api/addin/comments/[id]/snapshot/route";
+import { FakeDocumentHost } from "@/test/fake-document-host";
 import { setTokenVerifier, TokenError } from "../auth/entra";
+import { setDocumentHost } from "../m365/config";
 import { sha256, setFileStore } from "../storage";
 import { createComment } from "../letters/comments";
 import { createLetterRequest, createSeason } from "../letters/service";
@@ -180,13 +182,21 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
   });
 
   it("stores the Word-made DOCX and PDF as a new version, byte for byte", async () => {
+    // With Microsoft 365 on, the SharePoint file's content tag is kept, so the letter page
+    // does not report the add-in's save as unsaved changes.
+    const host = new FakeDocumentHost();
+    host.files.set(`item-${tag}`, { path: "x.docx", docx, cTag: 7, readOnly: false });
+    setDocumentHost(host);
     const form = await uploadForm({ note: "תיקון שנת לימודים" });
     const res = await postVersion(req(`/api/addin/letters/${letterId}/versions`, { method: "POST", who: "adv", body: form }), params(letterId));
+    setDocumentHost(undefined);
     expect(res.status).toBe(201);
     expect(await res.json()).toMatchObject({ versionNumber: 1, stage: "DRAFT", submitted: false, pageCount: 2 });
     const [v] = await getDb().select().from(schema.versions).where(eq(schema.versions.letterId, letterId));
     expect(v).toMatchObject({ number: 1, pdfSource: "ADDIN", note: "תיקון שנת לימודים", docxSha256: sha256(docx) });
     expect(files.get(v!.docxKey)).toEqual(docx);
+    const [l] = await getDb().select().from(schema.letterRequests).where(eq(schema.letterRequests.id, letterId));
+    expect(l!.sharepointVersionCTag).toBe(`"c:{item-${tag}},7"`);
   });
 
   it("does not let someone who may not submit use 'save and submit'", async () => {

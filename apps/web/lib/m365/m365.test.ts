@@ -1,8 +1,11 @@
 import type { TokenCredential } from "@azure/identity";
+import { crc32 } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
+import { documentsConfigured, getDocumentHost, graphConfigured, setDocumentHost } from "./config";
 import { letterPath, safeName, SharePointDocumentHost, wordDesktopUrl } from "./documents";
 import { GraphClient, GraphError } from "./graph";
 import { GraphMailer } from "./mail";
+import { emptyLetterDocx } from "./template";
 
 const credential: TokenCredential = { getToken: async () => ({ token: "t", expiresOnTimestamp: Date.now() + 3600e3 }) };
 
@@ -96,5 +99,91 @@ describe("Graph mailer", () => {
     });
     expect(calls[0]!.url).toContain("/users/letters%40college.ac.il/sendMail");
     expect(JSON.parse(calls[0]!.init.body as string)).toMatchObject({ saveToSentItems: false });
+  });
+});
+
+describe("SharePoint working file: lookup and locking", () => {
+  it("finds the file at the letter's path, or reports none", async () => {
+    const { impl, calls } = fakeFetch([
+      Response.json(item),
+      Response.json({ error: { code: "itemNotFound", message: "x" } }, { status: 404 }),
+    ]);
+    const host = new SharePointDocumentHost(new GraphClient(credential, impl), "site1");
+    const parts = { seasonName: "s", campus: "c", trackNumber: "1", trackName: "t" };
+    expect(await host.findLetterFile(parts)).toMatchObject({ itemId: "item1", cTag: item.cTag });
+    expect(calls[0]!.url).toBe("https://graph.microsoft.com/v1.0/sites/site1/drive/root:/s/c/1%20-%20t.docx");
+    expect(await host.findLetterFile(parts)).toBeNull();
+  });
+
+  it("does not lock unless checkout locking is turned on", async () => {
+    const { impl, calls } = fakeFetch([]);
+    const host = new SharePointDocumentHost(new GraphClient(credential, impl), "site1", { lockApproved: false });
+    expect(await host.setReadOnly({ driveId: "d", itemId: "i" }, true)).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("locks by checking the file out to the app, and unlocks by checking it in", async () => {
+    const { impl, calls } = fakeFetch([new Response(null, { status: 204 }), new Response(null, { status: 204 })]);
+    const host = new SharePointDocumentHost(new GraphClient(credential, impl), "site1", { lockApproved: true });
+    expect(await host.setReadOnly({ driveId: "d", itemId: "i" }, true)).toBe(true);
+    expect(await host.setReadOnly({ driveId: "d", itemId: "i" }, false)).toBe(true);
+    expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
+      "POST https://graph.microsoft.com/v1.0/drives/d/items/i/checkout",
+      "POST https://graph.microsoft.com/v1.0/drives/d/items/i/checkin",
+    ]);
+    expect(JSON.parse(calls[1]!.init.body as string)).toHaveProperty("comment");
+  });
+
+  it("lets a failed checkout surface (e.g. someone has the file open)", async () => {
+    const { impl } = fakeFetch([Response.json({ error: { code: "resourceLocked", message: "locked" } }, { status: 423 })]);
+    const host = new SharePointDocumentHost(new GraphClient(credential, impl), "site1", { lockApproved: true });
+    await expect(host.setReadOnly({ driveId: "d", itemId: "i" }, true)).rejects.toMatchObject({ status: 423 });
+  });
+});
+
+describe("empty letter template", () => {
+  /** Reads a stored-entry ZIP back, checking each entry's CRC. */
+  function unzip(bytes: Uint8Array): Map<string, string> {
+    const b = Buffer.from(bytes);
+    const out = new Map<string, string>();
+    for (let at = 0; b.readUInt32LE(at) === 0x04034b50; ) {
+      const size = b.readUInt32LE(at + 18);
+      const nameLen = b.readUInt16LE(at + 26);
+      const name = b.subarray(at + 30, at + 30 + nameLen).toString("utf8");
+      const data = b.subarray(at + 30 + nameLen, at + 30 + nameLen + size);
+      expect(crc32(data)).toBe(b.readUInt32LE(at + 14));
+      out.set(name, data.toString("utf8"));
+      at += 30 + nameLen + size;
+    }
+    const end = b.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    expect(b.readUInt16LE(end + 10)).toBe(out.size);
+    return out;
+  }
+
+  it("is a minimal right-to-left Word document", () => {
+    const docx = emptyLetterDocx();
+    const parts = unzip(docx);
+    expect([...parts.keys()]).toEqual(["[Content_Types].xml", "_rels/.rels", "word/document.xml"]);
+    expect(parts.get("[Content_Types].xml")).toContain('PartName="/word/document.xml"');
+    expect(parts.get("_rels/.rels")).toContain('Target="word/document.xml"');
+    expect(parts.get("word/document.xml")).toContain("<w:bidi/>");
+    // What uploadVersion checks to accept a DOCX.
+    expect(Buffer.from(docx.subarray(0, 4096)).includes("[Content_Types].xml")).toBe(true);
+  });
+});
+
+describe("Microsoft 365 configuration", () => {
+  it("turns SharePoint features on only with Graph credentials and a site", () => {
+    expect(graphConfigured({})).toBe(false);
+    expect(graphConfigured({ M365_TENANT_ID: "t" })).toBe(false);
+    expect(graphConfigured({ M365_TENANT_ID: "t", M365_CLIENT_ID: "c" })).toBe(true);
+    expect(graphConfigured({ M365_USE_MANAGED_IDENTITY: "true" })).toBe(true);
+    expect(documentsConfigured({ M365_USE_MANAGED_IDENTITY: "true" })).toBe(false);
+    expect(documentsConfigured({ M365_USE_MANAGED_IDENTITY: "true", M365_SITE_ID: "s" })).toBe(true);
+  });
+
+  it("has no document host when nothing is configured", () => {
+    setDocumentHost(undefined);
+    expect(getDocumentHost()).toBeNull();
   });
 });
