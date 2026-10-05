@@ -1,0 +1,15 @@
+# Local development only: PostgreSQL and a mail catcher (Mailpit, UI on http://localhost:8025)
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: al
+      POSTGRES_PASSWORD: al
+      POSTGRES_DB: acceptance_letters
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+  mail:
+    image: axllent/mailpit:latest
+    ports: ["1025:1025", "8025:8025"]
+volumes:
+  pgdata:

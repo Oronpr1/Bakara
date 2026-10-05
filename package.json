@@ -1,0 +1,20 @@
+{
+  "name": "acceptance-letters",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "db:up": "docker compose up -d",
+    "db:migrate": "pnpm --filter @al/db migrate",
+    "db:seed": "pnpm --filter @al/db seed",
+    "dev": "pnpm --filter @al/web dev"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "@types/node": "^22.20.5"
+  }
+}
