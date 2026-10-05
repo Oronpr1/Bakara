@@ -5,6 +5,7 @@ import { json, preflight, readLimitedForm, withAddinUser } from "@/lib/addin/htt
 import { isUuid } from "@/lib/addin/ids";
 import { assertDocumentIsLetter, graphResolverFromEnv } from "@/lib/addin/letters";
 import { AppError, forbidden, notFound, userMessage } from "@/lib/errors";
+import { currentCTag } from "@/lib/letters/live-file";
 import { performTransition, uploadVersion } from "@/lib/letters/service";
 import { loadLetter } from "@/lib/letters/state";
 
@@ -41,7 +42,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const docx = await fileBytes(form, "docx", "Word");
     const pdf = await fileBytes(form, "pdf", "PDF");
-    const version = await uploadVersion(actor, id, { docx, pdf, note, pdfSource: "ADDIN" });
+    // Word saves to SharePoint on its own, so the file there is what the add-in just sent.
+    const sharepointCTag = await currentCTag(id);
+    const version = await uploadVersion(actor, id, { docx, pdf, note, pdfSource: "ADDIN", sharepointCTag });
 
     let stage = (await loadLetter(getDb(), id)).row.stage;
     let submitError: string | undefined;
