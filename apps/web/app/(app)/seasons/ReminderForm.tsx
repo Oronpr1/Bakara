@@ -1,3 +1,4 @@
+import { BellRing } from "lucide-react";
 import { ActionForm } from "@/components/ActionForm";
 import { btnSecondary, input } from "@/components/ui";
 import { setReminderAction } from "./actions";
@@ -7,7 +8,9 @@ export function ReminderForm({ seasonId, days }: { seasonId: string; days: numbe
   return (
     <ActionForm
       action={setReminderAction}
-      submitLabel="שמור תזכורת"
+      submitLabel="שמור"
+      submitAriaLabel="שמור מרווח תזכורת"
+      submitIcon={<BellRing aria-hidden className="size-4" />}
       buttonClassName={btnSecondary}
       inline
       className="flex flex-wrap items-end gap-3"

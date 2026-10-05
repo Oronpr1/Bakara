@@ -1,4 +1,29 @@
 import { COMMENT_STATUS_LABELS, SLOT_LABELS, STAGE_LABELS, type ApproverSlot, type CommentStatus, type Stage } from "@al/domain";
+import {
+  BadgeCheck,
+  Check,
+  ChevronsLeft,
+  CircleCheck,
+  Cloud,
+  FastForward,
+  FilePlus,
+  FileUp,
+  History as HistoryIcon,
+  Lock,
+  LockOpen,
+  MessageSquarePlus,
+  MessageSquareText,
+  RotateCcw,
+  Send,
+  TriangleAlert,
+  Undo2,
+  UserCog,
+  UserMinus,
+  UserPlus,
+  Dot,
+  type LucideIcon,
+} from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { card } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import type { LetterDetail } from "@/lib/letters/queries";
@@ -12,6 +37,38 @@ const TRANSITION_LABELS: Record<string, string> = {
   FORCE_ADVANCE: "העברת שלב ידנית",
   FINAL_APPROVE: "אישור סופי",
   REOPEN: "פתיחה מחדש",
+};
+
+type Tone = "muted" | "accent" | "good" | "warn";
+
+const EVENT_ICONS: Record<string, [LucideIcon, Tone]> = {
+  LETTER_CREATED: [FilePlus, "accent"],
+  STAGE_CHANGED: [ChevronsLeft, "accent"],
+  VERSION_UPLOADED: [FileUp, "accent"],
+  SHAREPOINT_FILE_CREATED: [Cloud, "muted"],
+  SHAREPOINT_FILE_LOCKED: [Lock, "muted"],
+  SHAREPOINT_FILE_UNLOCKED: [LockOpen, "muted"],
+  SHAREPOINT_LOCK_FAILED: [TriangleAlert, "warn"],
+  APPROVED: [CircleCheck, "good"],
+  APPROVER_REPLACED: [UserCog, "muted"],
+  APPROVER_ADDED: [UserPlus, "muted"],
+  APPROVER_REMOVED: [UserMinus, "warn"],
+  ADVISOR_CHANGED: [UserCog, "muted"],
+  COMMENT_CREATED: [MessageSquarePlus, "muted"],
+  COMMENT_STATUS: [MessageSquareText, "muted"],
+  SUBMIT_FOR_REVIEW: [Send, "accent"],
+  INITIAL_APPROVE: [Check, "good"],
+  RETURN_FOR_CHANGES: [Undo2, "warn"],
+  FORCE_ADVANCE: [FastForward, "warn"],
+  FINAL_APPROVE: [BadgeCheck, "good"],
+  REOPEN: [RotateCcw, "warn"],
+};
+
+const TONES: Record<Tone, string> = {
+  muted: "bg-surface-2 text-muted ring-line",
+  accent: "bg-accent-soft text-accent ring-accent/30",
+  good: "bg-good-soft text-good ring-good/30",
+  warn: "bg-warn-soft text-warn ring-warn/30",
 };
 
 /** One audit event as a Hebrew sentence (noun phrases, so they read well for everyone). */
@@ -61,27 +118,38 @@ export function describeEvent(e: Event, names: Map<string, string>): { text: str
 export function History({ detail }: { detail: LetterDetail }) {
   const { history, names } = detail;
   return (
-    <section aria-labelledby="history-h" className={`${card} flex flex-col gap-3`}>
+    <section aria-labelledby="history-h" className={`${card} flex flex-col gap-4`}>
       <h2 id="history-h" className="font-bold">
         היסטוריה
       </h2>
       {history.length === 0 ? (
-        <p className="text-sm text-muted">אין עדיין אירועים.</p>
+        <EmptyState icon={HistoryIcon} title="אין עדיין אירועים" />
       ) : (
-        <ol className="flex flex-col divide-y divide-line">
-          {history.map((e) => {
+        <ol className="flex flex-col">
+          {history.map((e, i) => {
             const { text, detail: more } = describeEvent(e, names);
+            const [Icon, tone] = EVENT_ICONS[e.type] ?? [Dot, "muted"];
             return (
-              <li key={e.id} className="flex flex-col gap-0.5 py-2.5 sm:flex-row sm:items-baseline sm:gap-4">
-                <time dateTime={e.at.toISOString()} className="tabular shrink-0 text-xs text-muted sm:w-36">
-                  {formatDateTime(e.at)}
-                </time>
-                <span className="flex flex-col">
-                  <span>
-                    <span className="font-semibold">{(e.actorId && names.get(e.actorId)) || "המערכת"}</span> · {text}
-                  </span>
-                  {more && <span className="text-sm text-muted">״{more}״</span>}
+              <li key={e.id} className="relative flex gap-3 pb-4 last:pb-0">
+                {i < history.length - 1 && <span aria-hidden className="absolute top-9 bottom-1 start-[15.5px] w-px bg-line" />}
+                <span aria-hidden className={`relative grid size-8 shrink-0 place-items-center rounded-full ring-1 ring-inset ${TONES[tone]}`}>
+                  <Icon className="size-4" />
                 </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p>
+                      <span className="font-semibold">{(e.actorId && names.get(e.actorId)) || "המערכת"}</span> · {text}
+                    </p>
+                    {more && (
+                      <p className="rounded-md border-s-2 border-line-strong bg-surface-2 px-2.5 py-1.5 text-sm text-muted">
+                        ״{more}״
+                      </p>
+                    )}
+                  </div>
+                  <time dateTime={e.at.toISOString()} className="tabular shrink-0 text-xs text-muted">
+                    {formatDateTime(e.at)}
+                  </time>
+                </div>
               </li>
             );
           })}

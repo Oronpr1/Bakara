@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon, type IconName } from "./Icon";
 import { classifyDocumentUrl, fileNameOf } from "./docUrl";
 import { PHASE_LABELS, saveVersion, WrongDocumentError, type Phase, type WordDocument } from "./flow";
 import type { AddinComment, Api, LetterLookup, Stage, UploadResult } from "./types";
@@ -116,6 +117,7 @@ export function App({ host }: { host: Host }) {
           {view.message}
           <div className="actions">
             <button className="btn secondary" onClick={() => void load()}>
+              <Icon name="refresh" />
               לנסות שוב
             </button>
           </div>
@@ -140,16 +142,32 @@ export function App({ host }: { host: Host }) {
 function Loading() {
   return (
     <div className="loading" role="status">
-      <span className="spinner" aria-hidden />
-      טוען…
+      <span className="visually-hidden">טוען את המכתב…</span>
+      <div aria-hidden className="skeleton-group">
+        <span className="skeleton" style={{ width: "45%", height: 12 }} />
+        <span className="skeleton" style={{ width: "75%", height: 22 }} />
+        <span className="skeleton" style={{ width: "60%", height: 12 }} />
+      </div>
+      <span aria-hidden className="skeleton" style={{ height: 150, borderRadius: 10 }} />
+      <span aria-hidden className="skeleton" style={{ height: 64, borderRadius: 10 }} />
     </div>
   );
 }
 
+const NOTICE_ICONS: Record<"info" | "warn" | "error" | "success", IconName> = {
+  info: "info",
+  warn: "warn",
+  error: "error",
+  success: "check",
+};
+
 function Notice({ tone, title, children }: { tone: "info" | "warn" | "error" | "success"; title: string; children?: React.ReactNode }) {
   return (
     <section className={`notice ${tone}`} role={tone === "error" || tone === "warn" ? "alert" : "status"}>
-      <h2>{title}</h2>
+      <h2>
+        <Icon name={NOTICE_ICONS[tone]} size={18} />
+        {title}
+      </h2>
       {children && <div className="notice-body">{children}</div>}
     </section>
   );
@@ -166,6 +184,7 @@ function NotALetter({ reason, location, onRetry }: { reason: "unsaved" | "local"
       <p>{text}</p>
       {location && (
         <p className="file" title={location}>
+          <Icon name="file" size={14} />
           <FileName name={fileNameOf(location)} />
         </p>
       )}
@@ -175,6 +194,7 @@ function NotALetter({ reason, location, onRetry }: { reason: "unsaved" | "local"
       </p>
       <div className="actions">
         <button className="btn secondary" onClick={onRetry}>
+          <Icon name="refresh" />
           בדיקה מחדש
         </button>
       </div>
@@ -222,7 +242,7 @@ function LetterView(props: {
         <div className="eyebrow">
           <span>מכתב קבלה · {letter.seasonName}</span>
           <button className="icon-btn" onClick={props.onRefresh} disabled={busy} title="רענון" aria-label="רענון">
-            ↻
+            <Icon name="refresh" />
           </button>
         </div>
         <h1>
@@ -233,7 +253,7 @@ function LetterView(props: {
         </p>
         <div className="chips">
           <span className={`chip stage ${STAGE_TONE[letter.stage]}`}>{letter.stageLabel}</span>
-          <span className="chip">{letter.latestVersion > 0 ? `גרסה ${letter.latestVersion}` : "אין עדיין גרסה"}</span>
+          <span className="chip version">{letter.latestVersion > 0 ? `גרסה ${letter.latestVersion}` : "אין עדיין גרסה"}</span>
         </div>
       </header>
 
@@ -245,7 +265,10 @@ function LetterView(props: {
         {op.kind === "done" && <Done result={op.result} onDismiss={props.onDismiss} />}
         {op.kind === "failed" && (
           <div className="inline-error" role="alert">
-            <b>הגרסה לא נשמרה.</b> {op.message}
+            <Icon name="error" />
+            <span>
+              <b>הגרסה לא נשמרה.</b> {op.message}
+            </span>
           </div>
         )}
         {(op.kind === "idle" || op.kind === "failed") &&
@@ -263,10 +286,12 @@ function LetterView(props: {
               </label>
               <div className="buttons">
                 <button className="btn primary" onClick={() => props.onSave(false)}>
+                  <Icon name="save" />
                   שמור גרסה
                 </button>
                 {letter.canSubmit && (
                   <button className="btn secondary" onClick={() => props.onSave(true)}>
+                    <Icon name="forward" />
                     שמור והעבר לבדיקה
                   </button>
                 )}
@@ -274,7 +299,8 @@ function LetterView(props: {
               <p className="hint">Word ישמור את המסמך, יפיק ממנו PDF ושניהם יישמרו כגרסה {letter.latestVersion + 1}.</p>
             </>
           ) : (
-            <p className="hint">
+            <p className="hint readonly">
+              <Icon name="info" />
               {letter.stage === "APPROVED"
                 ? "המכתב אושר להפצה ולא ניתן לשמור לו גרסאות חדשות."
                 : "רק היועצת האחראית או מנהלת הבקרה שומרות גרסאות של המכתב הזה."}
@@ -284,7 +310,10 @@ function LetterView(props: {
 
       <Comments comments={letter.openComments} api={props.api} />
 
-      <footer className="foot">מחובר/ת בתור {user.name}</footer>
+      <footer className="foot">
+        <Icon name="user" size={12} />
+        מחובר/ת בתור {user.name}
+      </footer>
     </>
   );
 }
@@ -297,14 +326,14 @@ function Progress({ op }: { op: Extract<Op, { kind: "working" }> }) {
   return (
     <div className="progress" role="status" aria-live="polite">
       <div className="progress-title">{op.submit ? "שומרים ומעבירים לבדיקה…" : "שומרים גרסה…"}</div>
-      <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+      <div className="bar" role="progressbar" aria-label="התקדמות השמירה" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
         <div className="bar-fill" style={{ width: `${pct}%` }} />
       </div>
       <ol className="steps">
         {phases.map((p, i) => (
           <li key={p} className={i < current ? "is-done" : i === current ? "is-current" : ""}>
             <span className="dot" aria-hidden>
-              {i < current ? "✓" : ""}
+              {i < current && <Icon name="check" size={10} />}
             </span>
             {PHASE_LABELS[p]}
             {i === current && p === "upload" ? ` · ${Math.round(op.fraction * 100)}%` : ""}
@@ -320,7 +349,7 @@ function Done({ result, onDismiss }: { result: UploadResult; onDismiss: () => vo
   return (
     <div className="done" role="status">
       <div className="done-icon" aria-hidden>
-        ✓
+        <Icon name="check" />
       </div>
       <div>
         <div className="done-title">נשמרה גרסה {result.versionNumber}</div>
@@ -331,12 +360,15 @@ function Done({ result, onDismiss }: { result: UploadResult; onDismiss: () => vo
         </div>
         {result.submitError && (
           <div className="inline-error">
-            <b>הגרסה נשמרה, אבל ההעברה לבדיקה לא בוצעה:</b> {result.submitError}
+            <Icon name="error" />
+            <span>
+              <b>הגרסה נשמרה, אבל ההעברה לבדיקה לא בוצעה:</b> {result.submitError}
+            </span>
           </div>
         )}
       </div>
-      <button className="icon-btn close" onClick={onDismiss} aria-label="סגירה">
-        ×
+      <button className="icon-btn close" onClick={onDismiss} aria-label="סגירה" title="סגירה">
+        <Icon name="x" />
       </button>
     </div>
   );
@@ -346,10 +378,16 @@ function Comments({ comments, api }: { comments: AddinComment[]; api: Api }) {
   return (
     <section className="comments" aria-labelledby="comments-title">
       <h2 id="comments-title">
+        <Icon name="comment" />
         הערות פתוחות <span className="count">{comments.length}</span>
       </h2>
       {comments.length === 0 ? (
-        <p className="empty">אין הערות פתוחות על המכתב.</p>
+        <div className="empty">
+          <span className="empty-icon">
+            <Icon name="commentDone" size={20} />
+          </span>
+          <p>אין הערות פתוחות על המכתב.</p>
+        </div>
       ) : (
         <ul>
           {comments.map((c) => (

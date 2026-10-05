@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import { useId } from "react";
 import { hint as hintClass, input, label as labelClass } from "./ui";
 
@@ -5,16 +6,24 @@ import { hint as hintClass, input, label as labelClass } from "./ui";
 export function Field({
   label,
   hint,
+  icon: Icon,
   className = "",
   ...props
-}: { label: string; hint?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; hint?: string; icon?: LucideIcon } & React.InputHTMLAttributes<HTMLInputElement>) {
   const id = useId();
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <label htmlFor={id} className={labelClass}>
         {label}
       </label>
-      <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} className={input} {...props} />
+      {Icon ? (
+        <div className="relative">
+          <Icon aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} className={`${input} ps-9`} {...props} />
+        </div>
+      ) : (
+        <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} className={input} {...props} />
+      )}
       {hint && (
         <p id={`${id}-hint`} className={hintClass}>
           {hint}

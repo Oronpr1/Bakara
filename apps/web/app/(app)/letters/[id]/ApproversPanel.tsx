@@ -1,51 +1,49 @@
 import { SLOT_LABELS, stageIndex, roundOfSlot, type ApproverSlot, type LetterAction } from "@al/domain";
+import { CircleCheck, CircleDashed, Clock, TriangleAlert, UserCog, UserX } from "lucide-react";
 import { ActionForm } from "@/components/ActionForm";
-import { SelectField, TextAreaField } from "@/components/Field";
-import { Tag } from "@/components/Pills";
-import { btnDanger, btnSecondary, card } from "@/components/ui";
+import { SelectField } from "@/components/Field";
+import { btnSecondary, card, summary } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { usersWithRole, type LetterDetail, type UserOption } from "@/lib/letters/queries";
-import { addAcademicAction, changeAdvisorAction, removeApproverAction, replaceApproverAction } from "./actions";
+import { addAcademicAction, changeAdvisorAction, replaceApproverAction } from "./actions";
+import { ApproverRow } from "./ApproverRow";
+import { IconTag, SummaryChevron } from "./bits";
 
 type Assignment = LetterDetail["assignments"][number];
+
+function approvalOf(detail: LetterDetail, a: Assignment) {
+  return detail.approvals.find((x) => x.userId === a.userId && x.slot === a.slot);
+}
 
 function ApproverState({ detail, a, viewerId }: { detail: LetterDetail; a: Assignment; viewerId: string }) {
   if (a.removedAt)
     return (
       <span className="flex flex-col items-end gap-0.5 text-end">
-        <Tag>הוסר</Tag>
-        {a.removedReason && <span className="text-xs text-muted">{a.removedReason}</span>}
+        <IconTag icon={UserX}>הוסר</IconTag>
+        {a.removedReason && <span className="max-w-48 text-xs text-muted">{a.removedReason}</span>}
       </span>
     );
-  const approval = detail.approvals.find((x) => x.userId === a.userId && x.slot === a.slot);
+  const approval = approvalOf(detail, a);
   if (approval)
     return approval.versionNumber < detail.row.latestVersion ? (
       <span className="flex flex-col items-end gap-0.5 text-end">
-        <Tag tone="warn">אישר על גרסה {approval.versionNumber}</Tag>
+        <IconTag icon={TriangleAlert} tone="warn">
+          אישר על גרסה {approval.versionNumber}
+        </IconTag>
         <span className="text-xs text-warn">{a.userId === viewerId ? "השתנה מאז שאישרת" : "השתנה מאז"}</span>
       </span>
     ) : (
-      <Tag tone="good">אישר · גרסה {approval.versionNumber}</Tag>
+      <IconTag icon={CircleCheck} tone="good">
+        אישר · גרסה {approval.versionNumber}
+      </IconTag>
     );
   const started = stageIndex(detail.row.stage) >= stageIndex(roundOfSlot(a.slot));
-  return <Tag tone={started ? "warn" : "muted"}>{started ? "ממתין" : "ממתין לסבב"}</Tag>;
-}
-
-function Hidden({ letterId }: { letterId: string }) {
-  return <input type="hidden" name="letterId" value={letterId} />;
-}
-
-function RemoveForm({ detail, a, name }: { detail: LetterDetail; a: Assignment; name: string }) {
-  return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-bad">הסר מהתהליך</summary>
-      <ActionForm action={removeApproverAction} submitLabel={`הסר את ${name}`} buttonClassName={btnDanger} className="mt-2 flex flex-col gap-2">
-        <Hidden letterId={detail.row.id} />
-        <input type="hidden" name="userId" value={a.userId} />
-        <input type="hidden" name="slot" value={a.slot} />
-        <TextAreaField label="סיבה" name="reason" required maxLength={2000} />
-      </ActionForm>
-    </details>
+  return started ? (
+    <IconTag icon={Clock} tone="warn">
+      ממתין
+    </IconTag>
+  ) : (
+    <IconTag icon={CircleDashed}>ממתין לסבב</IconTag>
   );
 }
 
@@ -68,7 +66,7 @@ function PersonPicker({
 }) {
   return (
     <ActionForm action={action} submitLabel={submitLabel} buttonClassName={btnSecondary} inline className="flex flex-col gap-2">
-      <Hidden letterId={letterId} />
+      <input type="hidden" name="letterId" value={letterId} />
       {extra}
       <SelectField label={label} name={name} required placeholder="בחרו" options={people.map((p) => ({ value: p.id, label: p.name }))} />
     </ActionForm>
@@ -150,29 +148,35 @@ export function ApproversPanel({
       </h2>
       {ROUNDS.map((round) => {
         const list = detail.assignments.filter((a) => round.slots.includes(a.slot));
+        const active = list.filter((a) => !a.removedAt);
+        const done = active.filter((a) => (approvalOf(detail, a)?.versionNumber ?? -1) >= row.latestVersion).length;
+        const now = round.slots.some((s) => roundOfSlot(s) === row.stage);
         return (
-          <div key={round.title} className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-muted">{round.title}</h3>
+          <div key={round.title} className="flex flex-col">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-muted">
+              {round.title}
+              {now && <span className="rounded-full bg-accent-soft px-2 text-[11px] text-accent">עכשיו</span>}
+              {active.length > 0 && (
+                <span className="tabular ms-auto text-xs font-normal">
+                  {done} מתוך {active.length} אישרו
+                </span>
+              )}
+            </h3>
             {list.length === 0 ? (
-              <p className="text-sm text-muted">אין מאשרים בסבב הזה.</p>
+              <p className="py-2 text-sm text-muted">אין מאשרים בסבב הזה.</p>
             ) : (
               <ul className="flex flex-col divide-y divide-line">
                 {list.map((a) => {
                   const name = names.get(a.userId) ?? "—";
                   return (
-                    <li key={a.id} className={`flex flex-col gap-1.5 py-2 ${a.removedAt ? "opacity-70" : ""}`}>
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="flex flex-col">
-                          <span className={a.removedAt ? "line-through" : "font-semibold"}>{name}</span>
-                          <span className="text-xs text-muted">
-                            {SLOT_LABELS[a.slot]}
-                            {a.removedAt && ` · הוסר ב-${formatDate(a.removedAt)}`}
-                          </span>
-                        </span>
-                        <ApproverState detail={detail} a={a} viewerId={viewerId} />
-                      </div>
-                      {!a.removedAt && canRemove(a.slot) && <RemoveForm detail={detail} a={a} name={name} />}
-                    </li>
+                    <ApproverRow
+                      key={a.id}
+                      name={name}
+                      sub={`${SLOT_LABELS[a.slot]}${a.removedAt ? ` · הוסר ב-${formatDate(a.removedAt)}` : ""}`}
+                      state={<ApproverState detail={detail} a={a} viewerId={viewerId} />}
+                      removed={Boolean(a.removedAt)}
+                      remove={!a.removedAt && canRemove(a.slot) ? { letterId: row.id, userId: a.userId, slot: a.slot } : undefined}
+                    />
                   );
                 })}
               </ul>
@@ -181,9 +185,13 @@ export function ApproversPanel({
         );
       })}
       {manage.length > 0 && (
-        <details className="rounded-lg border border-line p-3">
-          <summary className="cursor-pointer font-semibold text-accent">שינוי אחראים</summary>
-          <div className="mt-3 flex flex-col gap-4">{manage}</div>
+        <details className="group rounded-lg border border-line px-3 py-1 open:pb-3">
+          <summary className={summary}>
+            <UserCog aria-hidden className="size-4" />
+            שינוי אחראים
+            <SummaryChevron />
+          </summary>
+          <div className="mt-2 flex flex-col gap-4">{manage}</div>
         </details>
       )}
     </section>

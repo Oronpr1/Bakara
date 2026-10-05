@@ -1,4 +1,5 @@
 import { canOnLetter, type LetterAction } from "@al/domain";
+import { Building2, CalendarClock, ChevronLeft, FileText, GraduationCap, History as HistoryIcon, Layers, UserRound, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -8,7 +9,7 @@ import { requireUser } from "@/lib/auth/session";
 import { AppError, userMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { liveFileStatus } from "@/lib/letters/live-file";
-import { getLetterDetail, isOverdue, waitingOn } from "@/lib/letters/queries";
+import { getLetterDetail, isOverdue } from "@/lib/letters/queries";
 import { getDocumentHost } from "@/lib/m365/config";
 import { ApproversPanel } from "./ApproversPanel";
 import { History } from "./History";
@@ -68,33 +69,40 @@ export default async function LetterPage({
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-3">
-        <p className="text-sm text-muted">
-          <Link href={`/seasons/${season.id}`} className="hover:underline">
+        <nav aria-label="מיקום" className="text-sm text-muted">
+          <Link href={`/seasons/${season.id}`} className="inline-flex min-h-9 items-center gap-1 hover:text-fg hover:underline">
             {season.name}
-          </Link>{" "}
-          /
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
+            <ChevronLeft aria-hidden className="size-4" />
+          </Link>
+        </nav>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="text-2xl font-bold">
             {row.trackName} <span className="tabular font-normal text-muted">({row.trackNumber})</span>
           </h1>
           <StagePill stage={row.stage} />
         </div>
-        <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-          {[
-            ["קמפוס", row.campus],
-            ["פקולטה", row.faculty],
-            ["יועצת בקרה", names.get(row.advisorId) ?? "—"],
-            ["גרסה אחרונה", row.latestVersion ? `גרסה ${row.latestVersion}` : "אין עדיין"],
-            ["ממתין ל", waitingOn(state, names)],
-          ].map(([k, v]) => (
-            <div key={k} className="flex gap-1.5">
-              <dt className="text-muted">{k}:</dt>
+        <dl className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          {(
+            [
+              [Building2, "קמפוס", row.campus],
+              [GraduationCap, "פקולטה", row.faculty],
+              [UserRound, "יועצת בקרה", names.get(row.advisorId) ?? "—"],
+              [Layers, "גרסה אחרונה", row.latestVersion ? `גרסה ${row.latestVersion}` : "אין עדיין"],
+            ] as [LucideIcon, string, string][]
+          ).map(([Icon, k, v]) => (
+            <div key={k} className="flex items-center gap-1.5">
+              <dt className="flex items-center gap-1.5 text-muted">
+                <Icon aria-hidden className="size-4" />
+                {k}:
+              </dt>
               <dd className="font-semibold">{v}</dd>
             </div>
           ))}
-          <div className="flex gap-1.5">
-            <dt className="text-muted">תאריך יעד:</dt>
+          <div className="flex items-center gap-1.5">
+            <dt className="flex items-center gap-1.5 text-muted">
+              <CalendarClock aria-hidden className="size-4" />
+              תאריך יעד:
+            </dt>
             <dd>
               {isOverdue(row) ? <Tag tone="bad">באיחור · {formatDate(row.dueDate)}</Tag> : <span className="font-semibold">{formatDate(row.dueDate)}</span>}
             </dd>
@@ -104,19 +112,22 @@ export default async function LetterPage({
 
       <StageStrip stage={row.stage} />
 
+      <WorkflowActions detail={detail} can={can} />
+
       <nav aria-label="תצוגות המכתב" className="flex gap-1 border-b border-line">
         {[
-          { href: `/letters/${row.id}`, label: "המכתב", active: !history },
-          { href: `/letters/${row.id}?tab=history`, label: "היסטוריה", active: history },
+          { href: `/letters/${row.id}`, label: "המכתב", icon: FileText, active: !history },
+          { href: `/letters/${row.id}?tab=history`, label: "היסטוריה", icon: HistoryIcon, active: history },
         ].map((t) => (
           <Link
             key={t.label}
             href={t.href}
             aria-current={t.active ? "page" : undefined}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold ${
-              t.active ? "border-accent text-accent" : "border-transparent text-muted hover:text-fg"
+            className={`-mb-px inline-flex min-h-11 items-center gap-2 border-b-2 px-4 text-sm font-semibold transition-colors duration-150 ${
+              t.active ? "border-accent text-accent" : "border-transparent text-muted hover:border-line-strong hover:text-fg"
             }`}
           >
+            <t.icon aria-hidden className="size-4" />
             {t.label}
           </Link>
         ))}
@@ -126,7 +137,6 @@ export default async function LetterPage({
         <History detail={detail} />
       ) : (
         <div className="flex flex-col gap-6">
-          <WorkflowActions detail={detail} can={can} />
           {word && (
             <WordFile
               letterId={row.id}

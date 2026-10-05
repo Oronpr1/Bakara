@@ -12,9 +12,19 @@ export type LoginState =
 
 const emailSchema = z.email();
 
+/**
+ * The visitor's address for login rate limits. Only headers our own proxy sets are trusted:
+ * Fly.io's Fly-Client-IP, Caddy's X-Real-IP, else the last X-Forwarded-For entry (the one the
+ * nearest proxy appended; earlier entries come from the client and can be forged).
+ */
 async function clientIp(): Promise<string | null> {
   const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+  return (
+    h.get("fly-client-ip")?.trim() ||
+    h.get("x-real-ip")?.trim() ||
+    h.get("x-forwarded-for")?.split(",").at(-1)?.trim() ||
+    null
+  );
 }
 
 export async function loginAction(_prev: LoginState, form: FormData): Promise<LoginState> {

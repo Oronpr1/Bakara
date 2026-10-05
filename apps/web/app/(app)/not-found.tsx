@@ -1,14 +1,24 @@
+import { FileQuestion, Inbox } from "lucide-react";
 import Link from "next/link";
-import { btnLink } from "@/components/ui";
+import { EmptyState } from "@/components/EmptyState";
+import { btnSecondary } from "@/components/ui";
 
 export default function NotFound() {
   return (
-    <section className="flex flex-col items-start gap-3">
-      <h1 className="text-2xl font-bold">הדף לא נמצא</h1>
-      <p className="text-muted">ייתכן שהקישור שגוי, או שאין לך גישה לפריט הזה.</p>
-      <Link href="/" className={btnLink}>
-        חזרה לעבודה שלי
-      </Link>
+    <section className="mx-auto w-full max-w-xl py-6">
+      <EmptyState
+        icon={FileQuestion}
+        as="h1"
+        title="הדף לא נמצא"
+        action={
+          <Link href="/" className={btnSecondary}>
+            <Inbox aria-hidden className="size-4" />
+            חזרה לעבודה שלי
+          </Link>
+        }
+      >
+        ייתכן שהקישור שגוי, או שאין לך גישה לפריט הזה.
+      </EmptyState>
     </section>
   );
 }

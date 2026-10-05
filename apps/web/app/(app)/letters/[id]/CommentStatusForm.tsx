@@ -1,6 +1,7 @@
 "use client";
 
 import { COMMENT_STATUS_LABELS, COMMENT_STATUSES, isOpenComment, type CommentStatus } from "@al/domain";
+import { CircleCheck, CircleHelp, MessageSquareText, RotateCcw, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { ActionForm } from "@/components/ActionForm";
 import { SelectField, TextAreaField } from "@/components/Field";
@@ -12,6 +13,13 @@ const VERB: Record<CommentStatus, string> = {
   NEEDS_CLARIFICATION: "בקש הבהרה",
   RESOLVED_FIXED: "סמן כטופלה",
   RESOLVED_NO_CHANGE: "ענה ללא שינוי",
+};
+
+const ICON: Record<CommentStatus, LucideIcon> = {
+  OPEN: RotateCcw,
+  NEEDS_CLARIFICATION: CircleHelp,
+  RESOLVED_FIXED: CircleCheck,
+  RESOLVED_NO_CHANGE: MessageSquareText,
 };
 
 /** Advisor / control manager: move a comment to its next status. The server re-checks everything. */
@@ -29,18 +37,20 @@ export function CommentStatusForm({
 }) {
   const choices = COMMENT_STATUSES.filter((s) => s !== from && (isOpenComment(from) || s === "OPEN"));
   const [to, setTo] = useState<CommentStatus>(choices[0]!);
+  const Icon = ICON[to];
   const noteRequired = to === "NEEDS_CLARIFICATION" || to === "RESOLVED_NO_CHANGE";
 
   return (
     <ActionForm
       action={commentStatusAction}
       submitLabel={VERB[to]}
+      submitIcon={<Icon aria-hidden className="size-4" />}
       buttonClassName={btnSecondary}
-      className="flex flex-col gap-3 rounded-lg bg-bg p-3"
+      className="@container flex flex-col gap-3 rounded-lg border border-line bg-surface-2 p-3"
     >
       <input type="hidden" name="letterId" value={letterId} />
       <input type="hidden" name="commentId" value={commentId} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 @md:grid-cols-2">
         <SelectField
           label="סטטוס חדש"
           name="to"

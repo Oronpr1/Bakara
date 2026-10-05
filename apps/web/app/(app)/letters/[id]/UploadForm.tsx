@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleAlert, Upload } from "lucide-react";
 import { useState } from "react";
 import { ActionForm } from "@/components/ActionForm";
 import { TextAreaField } from "@/components/Field";
@@ -17,7 +18,7 @@ function FileField({ name, text, accept, onError }: { name: string; text: string
         name={name}
         accept={accept}
         required
-        className={`${input} file:me-3 file:rounded file:border-0 file:bg-accent-soft file:px-3 file:py-1 file:font-semibold file:text-accent`}
+        className={`${input} file:me-3 file:cursor-pointer file:rounded file:border-0 file:bg-accent-soft file:px-3 file:py-1 file:font-semibold file:text-accent`}
         onChange={(e) => {
           const f = e.currentTarget.files?.[0];
           const tooBig = f && f.size > MAX_BYTES;
@@ -33,7 +34,7 @@ function FileField({ name, text, accept, onError }: { name: string; text: string
 export function UploadForm({ letterId, nextNumber }: { letterId: string; nextNumber: number }) {
   const [error, setError] = useState<string | null>(null);
   return (
-    <ActionForm action={uploadVersionAction} submitLabel={`העלה גרסה ${nextNumber}`} pendingLabel="מעלה…" className="flex flex-col gap-3">
+    <ActionForm action={uploadVersionAction} submitLabel={`העלה גרסה ${nextNumber}`} submitIcon={<Upload aria-hidden className="size-4" />} pendingLabel="מעלה…" className="flex flex-col gap-3">
       <input type="hidden" name="letterId" value={letterId} />
       <div className="grid gap-3 sm:grid-cols-2">
         <FileField name="docx" text="קובץ Word (DOCX)" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onError={setError} />
@@ -42,7 +43,8 @@ export function UploadForm({ letterId, nextNumber }: { letterId: string; nextNum
       <p className={hint}>כל קובץ עד 30MB. ה-PDF הוא מה שהמאשרים רואים ומעירים עליו.</p>
       <TextAreaField label="מה השתנה בגרסה (לא חובה)" name="note" maxLength={2000} />
       {error && (
-        <p className="text-sm text-bad" role="alert">
+        <p className="flex items-start gap-1.5 text-sm text-bad" role="alert">
+          <CircleAlert aria-hidden className="mt-0.5 size-4" />
           {error}
         </p>
       )}
