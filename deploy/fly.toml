@@ -1,0 +1,57 @@
+# Fly.io: one app, two processes (web + notification worker), in Frankfurt next to Supabase.
+#   fly launch --no-deploy --copy-config --config deploy/fly.toml   (first time, from the repo root)
+#   fly secrets set DATABASE_URL=... AUTH_SECRET=... SMTP_URL=... MAIL_FROM=... APP_URL=...
+#   fly volumes create letters_files --region fra --size 3
+#   fly deploy --config deploy/fly.toml
+app = "ono-letters"
+primary_region = "fra"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[deploy]
+  # Database migrations run once per deploy, before new machines start.
+  release_command = "pnpm db:migrate"
+
+[env]
+  NODE_ENV = "production"
+  STORAGE_DIR = "/data/storage"
+  PORT = "3000"
+
+[processes]
+  web = "pnpm --filter @al/web start"
+  worker = "pnpm --filter @al/web worker"
+
+# Frozen letter versions (DOCX + PDF) and comment snapshots. Fly snapshots the volume daily.
+[[mounts]]
+  source = "letters_files"
+  destination = "/data"
+  processes = ["web"]
+
+[http_service]
+  internal_port = 3000
+  processes = ["web"]
+  force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/login"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  processes = ["web"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["worker"]
