@@ -35,25 +35,14 @@ export const users = pgTable(
     name: text("name").notNull(),
     roles: roleEnum("roles").array().notNull().default(sql`'{}'`),
     active: boolean("active").notNull().default(true),
+    /** scrypt hash set by the control manager; null = the user cannot sign in yet. */
+    passwordHash: text("password_hash"),
+    passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
+    failedLogins: integer("failed_logins").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_email_uq").on(t.email)],
-);
-
-/** One-time login codes. Only a hash of the code is stored. */
-export const loginCodes = pgTable(
-  "login_codes",
-  {
-    id: id(),
-    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    codeHash: text("code_hash").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    attempts: integer("attempts").notNull().default(0),
-    consumedAt: timestamp("consumed_at", { withTimezone: true }),
-    requestIp: text("request_ip"),
-    createdAt: createdAt(),
-  },
-  (t) => [index("login_codes_user_idx").on(t.userId, t.createdAt)],
 );
 
 /** Server-side sessions. The cookie carries a random token; only its hash is stored. */

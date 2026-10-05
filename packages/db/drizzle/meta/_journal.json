@@ -15,6 +15,13 @@
       "when": 1791222743508,
       "tag": "0001_sharepoint_link",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791232448260,
+      "tag": "0002_password_login",
+      "breakpoints": true
     }
   ]
 }

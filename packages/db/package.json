@@ -14,7 +14,8 @@
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc --noEmit",
-    "create-admin": "tsx src/create-admin.ts"
+    "create-admin": "tsx src/create-admin.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@al/domain": "workspace:*",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@types/pg": "^8.15.0",
     "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "vitest": "^4.0.0"
   }
 }

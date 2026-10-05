@@ -3,6 +3,7 @@ import pg from "pg";
 import * as schema from "./schema";
 
 export * as schema from "./schema";
+export * from "./password";
 export type Db = NodePgDatabase<typeof schema>;
 
 let pool: pg.Pool | undefined;

@@ -1,15 +1,12 @@
-import { getDb, schema, type Db } from "@al/db";
+import { DUMMY_HASH, getDb, schema, verifyPassword, type Db } from "@al/db";
 import type { Role } from "@al/domain";
-import { and, desc, eq, gt, gte, isNull, sql } from "drizzle-orm";
-import { escapeHtml, getMailer, rtlEmail } from "../mail";
-import { keyedHash, newLoginCode, newSessionToken, normalizeEmail, safeEqualHex } from "./crypto";
+import { and, eq, gt, sql } from "drizzle-orm";
+import { keyedHash, newSessionToken, normalizeEmail } from "./crypto";
 
-const { users, loginCodes, sessions, auditEvents } = schema;
+const { users, sessions, auditEvents } = schema;
 
-export const CODE_TTL_MS = 10 * 60 * 1000;
-export const MAX_ATTEMPTS = 5;
-export const MAX_CODES_PER_HOUR = 5;
-export const MAX_CODES_PER_IP_PER_HOUR = 30;
+export const MAX_FAILED_LOGINS = 5;
+export const LOCK_MS = 15 * 60 * 1000;
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export interface SessionUser {
@@ -19,95 +16,45 @@ export interface SessionUser {
   roles: Role[];
 }
 
-const codeHash = (userId: string, code: string) => keyedHash(code, `login:${userId}`);
 const tokenHash = (token: string) => keyedHash(token, "session");
 
+export type LoginResult = { ok: true; token: string; expiresAt: Date } | { ok: false };
+
 /**
- * Sends a login code if the email belongs to an active user. Always resolves the same way
- * for unknown emails, so the form does not reveal who has an account.
+ * Checks email + password and opens a session. Every failure looks the same to the caller
+ * (unknown email, wrong password, disabled user, locked account), and an unknown email costs
+ * the same time as a wrong password. After MAX_FAILED_LOGINS wrong passwords in a row the
+ * account is locked for LOCK_MS; a correct password during the lock does not open a session.
  */
-export async function requestLoginCode(rawEmail: string, ip: string | null, db: Db = getDb()): Promise<void> {
-  const email = normalizeEmail(rawEmail);
-  const user = await db.query.users.findFirst({ where: and(eq(users.email, email), eq(users.active, true)) });
-  if (!user) return;
-
-  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const [{ n: perUser }] = (await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(loginCodes)
-    .where(and(eq(loginCodes.userId, user.id), gte(loginCodes.createdAt, hourAgo)))) as [{ n: number }];
-  if (perUser >= MAX_CODES_PER_HOUR) return;
-  if (ip) {
-    const [{ n: perIp }] = (await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(loginCodes)
-      .where(and(eq(loginCodes.requestIp, ip), gte(loginCodes.createdAt, hourAgo)))) as [{ n: number }];
-    if (perIp >= MAX_CODES_PER_IP_PER_HOUR) return;
-  }
-
-  const code = newLoginCode();
-  await db.transaction(async (tx) => {
-    // Only the newest code is valid.
-    await tx
-      .update(loginCodes)
-      .set({ consumedAt: new Date() })
-      .where(and(eq(loginCodes.userId, user.id), isNull(loginCodes.consumedAt)));
-    await tx.insert(loginCodes).values({
-      userId: user.id,
-      codeHash: codeHash(user.id, code),
-      expiresAt: new Date(Date.now() + CODE_TTL_MS),
-      requestIp: ip,
-    });
-  });
-
-  await getMailer().send({
-    to: user.email,
-    subject: `קוד הכניסה שלך: ${code}`,
-    text: `שלום ${user.name},\n\nקוד הכניסה למערכת מכתבי הקבלה: ${code}\nהקוד בתוקף ל-10 דקות.\n\nאם לא ביקשת קוד, אפשר להתעלם מהמייל.`,
-    html: rtlEmail(
-      `<p>שלום ${escapeHtml(user.name)},</p><p>קוד הכניסה למערכת מכתבי הקבלה:</p><p style="font-size:28px;letter-spacing:6px;font-weight:bold">${code}</p><p>הקוד בתוקף ל-10 דקות. אם לא ביקשת קוד, אפשר להתעלם מהמייל.</p>`,
-    ),
-  });
-}
-
-export type VerifyResult = { ok: true; token: string; expiresAt: Date } | { ok: false };
-
-/** Checks a code and opens a session. Wrong codes count toward the attempt limit. */
-export async function verifyLoginCode(
+export async function loginWithPassword(
   rawEmail: string,
-  code: string,
+  password: string,
   userAgent: string | null,
   db: Db = getDb(),
-): Promise<VerifyResult> {
+): Promise<LoginResult> {
   const email = normalizeEmail(rawEmail);
-  if (!/^\d{6}$/.test(code)) return { ok: false };
-  const user = await db.query.users.findFirst({ where: and(eq(users.email, email), eq(users.active, true)) });
-  if (!user) return { ok: false };
+  const user = await db.query.users.findFirst({ where: eq(users.email, email) });
+  const passwordOk = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+  if (!user || !user.active || !user.passwordHash) return { ok: false };
 
-  const row = await db.query.loginCodes.findFirst({
-    where: and(eq(loginCodes.userId, user.id), isNull(loginCodes.consumedAt), gt(loginCodes.expiresAt, new Date())),
-    orderBy: desc(loginCodes.createdAt),
-  });
-  if (!row || row.attempts >= MAX_ATTEMPTS) return { ok: false };
+  const now = new Date();
+  if (user.lockedUntil && user.lockedUntil > now) return { ok: false };
 
-  if (!safeEqualHex(row.codeHash, codeHash(user.id, code))) {
+  if (!passwordOk) {
     await db
-      .update(loginCodes)
-      .set({ attempts: sql`${loginCodes.attempts} + 1` })
-      .where(eq(loginCodes.id, row.id));
+      .update(users)
+      .set({
+        failedLogins: sql`case when ${users.failedLogins} + 1 >= ${MAX_FAILED_LOGINS} then 0 else ${users.failedLogins} + 1 end`,
+        lockedUntil: sql`case when ${users.failedLogins} + 1 >= ${MAX_FAILED_LOGINS} then ${new Date(now.getTime() + LOCK_MS)} else ${users.lockedUntil} end`,
+      })
+      .where(eq(users.id, user.id));
     return { ok: false };
   }
 
   const token = newSessionToken();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
   await db.transaction(async (tx) => {
-    // Consume atomically so a code cannot be used twice in a race.
-    const consumed = await tx
-      .update(loginCodes)
-      .set({ consumedAt: new Date() })
-      .where(and(eq(loginCodes.id, row.id), isNull(loginCodes.consumedAt)))
-      .returning({ id: loginCodes.id });
-    if (consumed.length === 0) throw new Error("Code already used");
+    await tx.update(users).set({ failedLogins: 0, lockedUntil: null }).where(eq(users.id, user.id));
     await tx.insert(sessions).values({ tokenHash: tokenHash(token), userId: user.id, expiresAt, userAgent });
     await tx.insert(auditEvents).values({ actorId: user.id, type: "LOGIN", data: {} });
   });

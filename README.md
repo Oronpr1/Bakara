@@ -21,8 +21,8 @@ pnpm db:migrate && pnpm db:seed
 pnpm dev              # http://localhost:3000
 ```
 
-משתמשי הדמו נמצאים ב-`packages/db/src/seed.ts`. קודי הכניסה מגיעים ל-Mailpit (http://localhost:8025),
-או מודפסים ללוג של השרת כש-`SMTP_URL` לא מוגדר.
+משתמשי הדמו נמצאים ב-`packages/db/src/seed.ts`; כולם נכנסים עם הסיסמה `demo-password-1` (לפיתוח בלבד).
+בייצור, מנהלת הבקרה קובעת סיסמה לכל משתמש במסך "משתמשים", והמשתמש הראשון נוצר עם `pnpm db:create-admin`.
 
 ## בדיקות
 

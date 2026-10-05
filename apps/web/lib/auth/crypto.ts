@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 function secret(): string {
   const s = process.env.AUTH_SECRET;
@@ -7,7 +7,7 @@ function secret(): string {
   return "development-only-secret-do-not-use-in-production";
 }
 
-/** Keyed hash, so a leaked database alone does not reveal codes or session tokens. */
+/** Keyed hash, so a leaked database alone does not reveal session tokens. */
 export function keyedHash(value: string, context: string): string {
   return createHmac("sha256", secret()).update(`${context}:${value}`).digest("hex");
 }
@@ -16,11 +16,6 @@ export function safeEqualHex(a: string, b: string): boolean {
   const ab = Buffer.from(a, "hex");
   const bb = Buffer.from(b, "hex");
   return ab.length === bb.length && timingSafeEqual(ab, bb);
-}
-
-/** A 6-digit one-time code, uniformly random. */
-export function newLoginCode(): string {
-  return randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
 export function newSessionToken(): string {

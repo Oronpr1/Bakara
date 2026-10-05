@@ -1,5 +1,4 @@
 // Shared pieces of the manual smoke scripts.
-import { readFileSync } from "node:fs";
 import { crc32 } from "node:zlib";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
@@ -53,20 +52,14 @@ export async function pdfBytes() {
   return Buffer.from(await doc.save());
 }
 
-/** Signs in through the login form, reading the one-time code from the dev server's log. */
-export function loginWith(browser, base, log) {
+/** Signs in through the login form with the demo password from the seed. */
+export function loginWith(browser, base, _log) {
   return async function login(email) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "he-IL" });
     const page = await context.newPage();
     await page.goto(`${base}/login`);
     await page.fill("#email", email);
-    await page.click("button:has-text('שלחו לי קוד כניסה')");
-    await page.waitForSelector("#code");
-    await page.waitForTimeout(500);
-    const re = new RegExp(`to=${email.replace(/\./g, "\\.")} subject=קוד הכניסה שלך: (\\d{6})`, "g");
-    const code = [...readFileSync(log, "utf8").matchAll(re)].at(-1)?.[1];
-    if (!code) throw new Error(`No login code for ${email} in ${log}`);
-    await page.fill("#code", code);
+    await page.fill("#password", process.env.DEMO_PASSWORD ?? "demo-password-1");
     await page.click("button:has-text('כניסה')");
     await page.waitForURL(`${base}/`);
     return page;

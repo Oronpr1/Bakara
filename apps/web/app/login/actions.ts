@@ -3,12 +3,11 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requestLoginCode, verifyLoginCode } from "@/lib/auth/service";
+import { loginWithPassword } from "@/lib/auth/service";
 import { setSessionCookie } from "@/lib/auth/session";
+import { allowLoginAttempt } from "@/lib/auth/throttle";
 
-export type LoginState =
-  | { step: "email"; error?: string }
-  | { step: "code"; email: string; error?: string };
+export type LoginState = { error?: string; email?: string };
 
 const emailSchema = z.email();
 
@@ -28,22 +27,17 @@ async function clientIp(): Promise<string | null> {
 }
 
 export async function loginAction(_prev: LoginState, form: FormData): Promise<LoginState> {
-  const intent = form.get("intent");
   const email = String(form.get("email") ?? "").trim();
+  const password = String(form.get("password") ?? "");
+  if (!emailSchema.safeParse(email).success) return { error: "כתובת המייל לא תקינה", email };
+  if (!password) return { error: "צריך להזין סיסמה", email };
 
-  if (intent === "request") {
-    if (!emailSchema.safeParse(email).success) return { step: "email", error: "כתובת המייל לא תקינה" };
-    await requestLoginCode(email, await clientIp());
-    return { step: "code", email };
-  }
+  if (!allowLoginAttempt(await clientIp()))
+    return { error: "יותר מדי ניסיונות כניסה מהכתובת הזו. נסו שוב בעוד כמה דקות.", email };
 
-  if (intent === "verify") {
-    const code = String(form.get("code") ?? "").replace(/\s/g, "");
-    const result = await verifyLoginCode(email, code, (await headers()).get("user-agent"));
-    if (!result.ok) return { step: "code", email, error: "הקוד שגוי או שפג תוקפו. אפשר לבקש קוד חדש." };
-    await setSessionCookie(result.token, result.expiresAt);
-    redirect("/");
-  }
-
-  return { step: "email" };
+  const result = await loginWithPassword(email, password, (await headers()).get("user-agent"));
+  if (!result.ok)
+    return { error: "המייל או הסיסמה שגויים. אחרי 5 ניסיונות כושלים החשבון ננעל ל-15 דקות.", email };
+  await setSessionCookie(result.token, result.expiresAt);
+  redirect("/");
 }

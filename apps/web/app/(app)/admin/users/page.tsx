@@ -3,12 +3,12 @@ import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/ActionForm";
 import { CheckboxGroup, Field } from "@/components/Field";
 import { Tag } from "@/components/Pills";
-import { ChevronLeft, UserCheck, UserPlus, UserX } from "lucide-react";
+import { ChevronLeft, KeyRound, UserCheck, UserPlus, UserX } from "lucide-react";
 import { btnQuiet, btnSecondary, card, summary as summaryClass } from "@/components/ui";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
 import { listUsers } from "@/lib/letters/queries";
-import { createUserAction, setActiveAction, setRolesAction } from "./actions";
+import { createUserAction, setActiveAction, setPasswordAction, setRolesAction } from "./actions";
 
 export const metadata = { title: "משתמשים · מכתבי קבלה" };
 
@@ -48,6 +48,16 @@ export default async function UsersPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="שם מלא" name="name" required maxLength={200} autoComplete="off" />
             <Field label="מייל" name="email" type="email" required dir="ltr" autoComplete="off" />
+            <Field
+              label="סיסמה ראשונית"
+              name="password"
+              type="text"
+              required
+              minLength={10}
+              dir="ltr"
+              autoComplete="off"
+              hint="לפחות 10 תווים. מוסרים למשתמש בעצמכם; אפשר לשנות בכל עת."
+            />
           </div>
           <CheckboxGroup legend="תפקידים" name="roles" options={roleOptions} />
         </ActionForm>
@@ -129,6 +139,24 @@ export default async function UsersPage() {
                     >
                       <input type="hidden" name="userId" value={p.id} />
                       <CheckboxGroup legend={`תפקידים של ${p.name}`} name="roles" options={roleOptions} defaultChecked={p.roles} />
+                    </ActionForm>
+                  </details>
+                  <details className="group flex flex-col">
+                    <summary className={`${summaryClass} text-sm`}>
+                      <ChevronLeft aria-hidden className="chev size-4" />
+                      <KeyRound aria-hidden className="size-4" />
+                      קביעת סיסמה חדשה
+                      <span className="sr-only"> עבור {p.name}</span>
+                    </summary>
+                    <ActionForm
+                      action={setPasswordAction}
+                      submitLabel="שמור סיסמה"
+                      submitAriaLabel={`שמור סיסמה חדשה עבור ${p.name}`}
+                      buttonClassName={btnSecondary}
+                      className="mt-2 flex flex-col gap-3 rounded-lg border border-line bg-surface-2 p-3"
+                    >
+                      <input type="hidden" name="userId" value={p.id} />
+                      <Field label="סיסמה חדשה" name="password" type="text" required minLength={10} dir="ltr" autoComplete="off" />
                     </ActionForm>
                   </details>
                 </div>
