@@ -319,7 +319,7 @@ function CommentCard({
         <button
           type="button"
           onClick={onSelect}
-          className="rounded bg-accent px-1.5 font-bold text-white tabular"
+          className="rounded bg-accent px-1.5 font-bold text-accent-fg tabular"
           aria-label={`הצג את הערה ${c.n} במסמך`}
         >
           {c.n}

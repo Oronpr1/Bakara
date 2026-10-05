@@ -1,4 +1,4 @@
-import { canGlobal, STAGE_LABELS, STAGES, type Stage } from "@al/domain";
+import { canGlobal, STAGES } from "@al/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -6,17 +6,19 @@ import { card } from "@/components/ui";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
 import { AppError } from "@/lib/errors";
-import { canSeeAllLetters, getSeason, listSeasonLetters, listUsers, usersWithRole } from "@/lib/letters/queries";
+import { canSeeAllLetters, getSeason, isOverdue, listSeasonLetters, listUsers, usersWithRole } from "@/lib/letters/queries";
 import { ReminderForm } from "../ReminderForm";
 import { Filters } from "./Filters";
 import { LetterTable } from "./LetterTable";
 import { NewLetterForm } from "./NewLetterForm";
+import { SeasonDashboard } from "./SeasonDashboard";
 
 const filterSchema = z.object({
   stage: z.enum(STAGES).optional().catch(undefined),
   advisor: z.uuid().optional().catch(undefined),
   campus: z.string().optional().catch(undefined),
   q: z.string().trim().optional().catch(undefined),
+  overdue: z.literal("1").optional().catch(undefined),
 });
 
 export default async function SeasonPage({
@@ -43,6 +45,7 @@ export default async function SeasonPage({
       (!filters.stage || row.stage === filters.stage) &&
       (!filters.advisor || row.advisorId === filters.advisor) &&
       (!filters.campus || row.campus === filters.campus) &&
+      (!filters.overdue || isOverdue(row)) &&
       (!q || [row.trackName, row.trackNumber, row.faculty, row.campus].some((s) => s.toLowerCase().includes(q))),
   );
 
@@ -52,11 +55,6 @@ export default async function SeasonPage({
     value,
     label,
   }));
-  const counts = Object.fromEntries(STAGES.map((s) => [s, letters.filter((l) => l.row.stage === s).length])) as Record<
-    Stage,
-    number
-  >;
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -69,10 +67,7 @@ export default async function SeasonPage({
           </p>
           <h1 className="text-2xl font-bold">{season.name}</h1>
           <p className="text-sm text-muted">
-            {canSeeAllLetters(actor) ? "כל דרישות המכתב בעונה" : "דרישות המכתב שלך בעונה"} ·{" "}
-            {STAGES.filter((s) => counts[s] > 0)
-              .map((s) => `${STAGE_LABELS[s]}: ${counts[s]}`)
-              .join(" · ") || "אין עדיין דרישות"}
+            {canSeeAllLetters(actor) ? "כל דרישות המכתב בעונה" : "דרישות המכתב שלך בעונה"}
           </p>
         </div>
         {canGlobal(actor, "SET_REMINDER_INTERVAL") && (
@@ -98,10 +93,12 @@ export default async function SeasonPage({
         </details>
       )}
 
+      <SeasonDashboard letters={letters} reminderIntervalDays={season.reminderIntervalDays} selectedStage={filters.stage} />
+
       <Filters values={filters} campuses={campuses} advisors={advisors} />
 
       <p className="text-sm text-muted" role="status">
-        מוצגות {shown.length} מתוך {letters.length} דרישות
+        מוצגות {shown.length} מתוך {letters.length} דרישות{filters.overdue ? " (רק באיחור)" : ""}
       </p>
       <LetterTable items={shown} />
     </div>
