@@ -9,6 +9,7 @@
 | `packages/domain` | כללי התהליך: שלבים, סבבי אישור, הרשאות, הערות. קוד טהור עם בדיקות. |
 | `packages/db` | סכמת PostgreSQL (Drizzle), מיגרציות, נתוני דמו. |
 | `apps/web` | האתר והשרת (Next.js), בעברית. |
+| `apps/addin` | תוסף Word (חלונית צד): שמירת גרסה רשמית (DOCX + PDF מ-Word) והעברה לבדיקה. ראו `apps/addin/README.md`. |
 
 ## הרצה מקומית
 

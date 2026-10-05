@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template. The add-in build (pnpm build in apps/addin) writes dist/manifest.xml with the placeholder values
+  filled from the build environment (see README.md). Deploy dist/manifest.xml, not this file.
+-->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+  <Id>{{ADDIN_ID}}</Id>
+  <Version>{{ADDIN_VERSION}}</Version>
+  <ProviderName>{{PROVIDER_NAME}}</ProviderName>
+  <DefaultLocale>he-IL</DefaultLocale>
+  <DisplayName DefaultValue="מכתבי קבלה" />
+  <Description DefaultValue="שמירת גרסה רשמית של מכתב הקבלה (Word ו-PDF) והעברה לבדיקה, ישירות מ-Word." />
+  <IconUrl DefaultValue="{{BASE_URL}}/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="{{BASE_URL}}/assets/icon-64.png" />
+  <SupportUrl DefaultValue="{{SUPPORT_URL}}" />
+  <AppDomains>
+    <AppDomain>{{BASE_URL}}</AppDomain>
+    <AppDomain>{{API_ORIGIN}}</AppDomain>
+    <AppDomain>https://login.microsoftonline.com</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Document" />
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.3">
+      <Set Name="WordApi" MinVersion="1.3" />
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="{{BASE_URL}}/index.html" />
+  </DefaultSettings>
+  <!-- Reads the whole file (getFileAsync) and saves it (Document.save). Never writes content. -->
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <FunctionFile resid="AL.Commands.Url" />
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="AL.Group">
+                <Label resid="AL.Group.Label" />
+                <Icon>
+                  <bt:Image size="16" resid="AL.Icon.16" />
+                  <bt:Image size="32" resid="AL.Icon.32" />
+                  <bt:Image size="80" resid="AL.Icon.80" />
+                </Icon>
+                <Control xsi:type="Button" id="AL.OpenPane">
+                  <Label resid="AL.Button.Label" />
+                  <Supertip>
+                    <Title resid="AL.Button.Label" />
+                    <Description resid="AL.Button.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="AL.Icon.16" />
+                    <bt:Image size="32" resid="AL.Icon.32" />
+                    <bt:Image size="80" resid="AL.Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>AcceptanceLettersPane</TaskpaneId>
+                    <SourceLocation resid="AL.Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="AL.Icon.16" DefaultValue="{{BASE_URL}}/assets/icon-16.png" />
+        <bt:Image id="AL.Icon.32" DefaultValue="{{BASE_URL}}/assets/icon-32.png" />
+        <bt:Image id="AL.Icon.80" DefaultValue="{{BASE_URL}}/assets/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="AL.Taskpane.Url" DefaultValue="{{BASE_URL}}/index.html" />
+        <bt:Url id="AL.Commands.Url" DefaultValue="{{BASE_URL}}/commands.html" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="AL.Group.Label" DefaultValue="מכתבי קבלה" />
+        <bt:String id="AL.Button.Label" DefaultValue="מכתבי קבלה" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="AL.Button.Tooltip" DefaultValue="הערות פתוחות על המכתב, שמירת גרסה רשמית והעברה לבדיקה." />
+      </bt:LongStrings>
+    </Resources>
+    <!-- Single sign-on: the Entra app registration of the add-in and the API it calls. -->
+    <WebApplicationInfo>
+      <Id>{{ENTRA_CLIENT_ID}}</Id>
+      <Resource>{{ENTRA_API_URI}}</Resource>
+      <Scopes>
+        <Scope>openid</Scope>
+        <Scope>profile</Scope>
+      </Scopes>
+    </WebApplicationInfo>
+  </VersionOverrides>
+</OfficeApp>
