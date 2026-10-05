@@ -1,13 +1,13 @@
 # Fly.io: one app, two processes (web + notification worker), in Frankfurt next to Supabase.
-#   fly launch --no-deploy --copy-config --config deploy/fly.toml   (first time, from the repo root)
+#   fly launch --no-deploy --copy-config   (first time, from the repo root)
 #   fly secrets set DATABASE_URL=... AUTH_SECRET=... SMTP_URL=... MAIL_FROM=... APP_URL=...
 #   fly volumes create letters_files --region fra --size 3
-#   fly deploy --config deploy/fly.toml
+#   fly deploy
 app = "ono-letters"
 primary_region = "fra"
 
 [build]
-  dockerfile = "../Dockerfile"
+  dockerfile = "Dockerfile"
 
 [deploy]
   # Database migrations run once per deploy, before new machines start.
