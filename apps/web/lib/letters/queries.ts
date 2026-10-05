@@ -69,14 +69,15 @@ export const usersWithRole = (all: UserOption[], role: Role) => all.filter((u) =
 // ---------------------------------------------------------------- seasons
 
 export async function listSeasons(db: Db = getDb()) {
-  const rows = await db
-    .select({
-      season: seasons,
-      letters: sql<number>`(select count(*)::int from ${letterRequests} where ${letterRequests.seasonId} = ${seasons.id})`,
-    })
-    .from(seasons)
-    .orderBy(desc(seasons.createdAt));
-  return rows.map((r) => ({ ...r.season, letterCount: r.letters }));
+  const [rows, counts] = await Promise.all([
+    db.select().from(seasons).orderBy(desc(seasons.createdAt)),
+    db
+      .select({ seasonId: letterRequests.seasonId, n: sql<number>`count(*)::int` })
+      .from(letterRequests)
+      .groupBy(letterRequests.seasonId),
+  ]);
+  const bySeason = new Map(counts.map((c) => [c.seasonId, c.n]));
+  return rows.map((s) => ({ ...s, letterCount: bySeason.get(s.id) ?? 0 }));
 }
 
 export async function getSeason(seasonId: string, db: Db = getDb()) {

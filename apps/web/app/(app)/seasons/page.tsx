@@ -29,7 +29,7 @@ export default async function SeasonsPage() {
       ) : (
         <ul className="flex flex-col gap-3">
           {seasons.map((s) => (
-            <li key={s.id} className={`${card} flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`}>
+            <li key={s.id} className={`${card} flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between`}>
               <div className="flex flex-col gap-1">
                 <Link href={`/seasons/${s.id}`} className="text-lg font-semibold text-accent hover:underline">
                   {s.name}
@@ -41,7 +41,14 @@ export default async function SeasonsPage() {
                   {s.status === "ARCHIVED" && <Tag>בארכיון</Tag>}
                 </span>
               </div>
-              {canRemind && <ReminderForm seasonId={s.id} days={s.reminderIntervalDays} />}
+              {canRemind && (
+                <details className="text-sm">
+                  <summary className="cursor-pointer font-semibold text-accent">שינוי מרווח התזכורת</summary>
+                  <div className="mt-2">
+                    <ReminderForm seasonId={s.id} days={s.reminderIntervalDays} />
+                  </div>
+                </details>
+              )}
             </li>
           ))}
         </ul>

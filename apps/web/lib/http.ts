@@ -4,7 +4,11 @@
  */
 export function contentDisposition(filename: string, type: "attachment" | "inline" = "attachment"): string {
   // eslint-disable-next-line no-control-regex
-  const clean = filename.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim() || "file";
+  const clean =
+    filename
+      .replace(/(?<=[א-ת])"(?=[א-ת])/g, "״") // תשפ"ז → תשפ״ז (gershayim)
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_")
+      .trim() || "file";
   const ascii = clean.replace(/[^\x20-\x7e]/g, "_");
   return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeRfc5987(clean)}`;
 }

@@ -19,10 +19,13 @@ export function ActionForm({
   className = "flex flex-col gap-3",
   confirm,
   inline = false,
+  submitAriaLabel,
 }: {
   action: Action;
   children?: React.ReactNode;
   submitLabel: string;
+  /** Fuller name for screen readers when the visible label is short (e.g. names the person). */
+  submitAriaLabel?: string;
   pendingLabel?: string;
   buttonClassName?: string;
   className?: string;
@@ -49,7 +52,7 @@ export function ActionForm({
     <form ref={ref} action={dispatch} onSubmit={onSubmit} className={className}>
       {children}
       <div className={inline ? "flex flex-wrap items-center gap-3" : "flex flex-col items-start gap-2"}>
-        <button className={buttonClassName} disabled={pending}>
+        <button className={buttonClassName} disabled={pending} aria-label={submitAriaLabel}>
           {pending ? pendingLabel : submitLabel}
         </button>
         <FormMessage state={state} />

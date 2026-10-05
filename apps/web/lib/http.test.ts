@@ -8,7 +8,8 @@ describe("contentDisposition", () => {
     expect(header).toMatch(/^attachment; filename="101-[_ ()]+-v2\.docx"; filename\*=UTF-8''/);
     const encoded = header.split("UTF-8''")[1]!;
     expect(encoded).not.toMatch(/[()'"* ]/);
-    expect(decodeURIComponent(encoded)).toBe("101-משפטים (תשפ_ז)-v2.docx");
+    expect(decodeURIComponent(encoded)).toBe("101-משפטים (תשפ״ז)-v2.docx");
+    expect(contentDisposition('a"b/c.pdf')).toContain(`filename="a_b_c.pdf"`);
   });
 
   it("can ask the browser to show the file inline", () => {

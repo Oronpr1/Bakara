@@ -59,45 +59,43 @@ export default async function SeasonPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-sm text-muted">
-          <Link href="/seasons" className="hover:underline">
-            עונות רישום
-          </Link>{" "}
-          /
-        </p>
-        <h1 className="text-2xl font-bold">{season.name}</h1>
-        <p className="text-sm text-muted">
-          {canSeeAllLetters(actor) ? "כל דרישות המכתב בעונה" : "דרישות המכתב שלך בעונה"} ·{" "}
-          {STAGES.filter((s) => counts[s] > 0)
-            .map((s) => `${STAGE_LABELS[s]}: ${counts[s]}`)
-            .join(" · ") || "אין עדיין דרישות"}
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-muted">
+            <Link href="/seasons" className="hover:underline">
+              עונות רישום
+            </Link>{" "}
+            /
+          </p>
+          <h1 className="text-2xl font-bold">{season.name}</h1>
+          <p className="text-sm text-muted">
+            {canSeeAllLetters(actor) ? "כל דרישות המכתב בעונה" : "דרישות המכתב שלך בעונה"} ·{" "}
+            {STAGES.filter((s) => counts[s] > 0)
+              .map((s) => `${STAGE_LABELS[s]}: ${counts[s]}`)
+              .join(" · ") || "אין עדיין דרישות"}
+          </p>
+        </div>
+        {canGlobal(actor, "SET_REMINDER_INTERVAL") && (
+          <ReminderForm seasonId={season.id} days={season.reminderIntervalDays} />
+        )}
       </div>
 
-      {(canGlobal(actor, "CREATE_LETTER_REQUEST") || canGlobal(actor, "SET_REMINDER_INTERVAL")) && (
-        <div className="flex flex-col gap-4">
-          {canGlobal(actor, "CREATE_LETTER_REQUEST") && (
-            <details className={`${card} group`}>
-              <summary className="cursor-pointer font-semibold text-accent">דרישת מכתב חדשה</summary>
-              <div className="mt-4">
-                <NewLetterForm
-                  seasonId={season.id}
-                  campuses={campuses}
-                  faculties={faculties}
-                  defaultAdvisorId={user.roles.includes("CONTROL_ADVISOR") ? user.id : undefined}
-                  advisors={usersWithRole(people, "CONTROL_ADVISOR")}
-                  registrationManagers={usersWithRole(people, "REGISTRATION_MANAGER")}
-                  vps={usersWithRole(people, "VP_REGISTRATION")}
-                  academics={usersWithRole(people, "ACADEMIC_APPROVER")}
-                />
-              </div>
-            </details>
-          )}
-          {canGlobal(actor, "SET_REMINDER_INTERVAL") && (
-            <ReminderForm seasonId={season.id} days={season.reminderIntervalDays} />
-          )}
-        </div>
+      {canGlobal(actor, "CREATE_LETTER_REQUEST") && (
+        <details className={card}>
+          <summary className="cursor-pointer font-semibold text-accent">דרישת מכתב חדשה</summary>
+          <div className="mt-4">
+            <NewLetterForm
+              seasonId={season.id}
+              campuses={campuses}
+              faculties={faculties}
+              defaultAdvisorId={user.roles.includes("CONTROL_ADVISOR") ? user.id : undefined}
+              advisors={usersWithRole(people, "CONTROL_ADVISOR")}
+              registrationManagers={usersWithRole(people, "REGISTRATION_MANAGER")}
+              vps={usersWithRole(people, "VP_REGISTRATION")}
+              academics={usersWithRole(people, "ACADEMIC_APPROVER")}
+            />
+          </div>
+        </details>
       )}
 
       <Filters values={filters} campuses={campuses} advisors={advisors} />

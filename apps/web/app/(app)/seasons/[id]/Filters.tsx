@@ -14,8 +14,8 @@ export function Filters({
   advisors: { value: string; label: string }[];
 }) {
   return (
-    <form role="search" aria-label="סינון דרישות" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] lg:items-end">
-      <Field label="חיפוש" name="q" type="search" defaultValue={values.q} placeholder="מסלול, מספר, פקולטה" />
+    <form role="search" aria-label="סינון דרישות" className="grid grid-cols-2 items-end gap-3 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+      <Field className="col-span-2 lg:col-span-1" label="חיפוש" name="q" type="search" defaultValue={values.q} placeholder="מסלול, מספר, פקולטה" />
       <SelectField
         label="שלב"
         name="stage"
@@ -31,7 +31,7 @@ export function Filters({
         placeholder="כל הקמפוסים"
         options={campuses.map((c) => ({ value: c, label: c }))}
       />
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 lg:col-span-1">
         <button className={btnSecondary}>סנן</button>
         <Link href="?" className={btnLink}>
           נקה

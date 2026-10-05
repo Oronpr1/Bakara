@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ActionForm } from "@/components/ActionForm";
 import { CheckboxGroup, Field } from "@/components/Field";
 import { Tag } from "@/components/Pills";
-import { btnDanger, btnSecondary, card } from "@/components/ui";
+import { btnQuiet, btnSecondary, card } from "@/components/ui";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
 import { listUsers } from "@/lib/letters/queries";
@@ -42,9 +42,9 @@ export default async function UsersPage() {
         <h2 id="all-users" className="text-lg font-bold">
           כל המשתמשים ({people.length})
         </h2>
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface">
           {people.map((p) => (
-            <li key={p.id} className={`${card} flex flex-col gap-3 ${p.active ? "" : "opacity-75"}`}>
+            <li key={p.id} className={`flex flex-col gap-2 px-4 py-3 sm:px-5 ${p.active ? "" : "bg-bg"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col">
                   <span className="flex items-center gap-2 font-semibold">
@@ -59,8 +59,9 @@ export default async function UsersPage() {
                 {p.id !== user.id && (
                   <ActionForm
                     action={setActiveAction}
-                    submitLabel={p.active ? `השבת את ${p.name}` : `הפעל מחדש את ${p.name}`}
-                    buttonClassName={p.active ? btnDanger : btnSecondary}
+                    submitLabel={p.active ? "השבת" : "הפעל מחדש"}
+                    submitAriaLabel={p.active ? `השבת את ${p.name}` : `הפעל מחדש את ${p.name}`}
+                    buttonClassName={p.active ? btnQuiet : btnSecondary}
                     confirm={p.active ? `להשבית את ${p.name}? הוא/היא לא יוכלו להתחבר.` : undefined}
                     inline
                   >
