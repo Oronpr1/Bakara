@@ -1,4 +1,4 @@
-import type { ApproverSlot, Role, Stage } from "./types.js";
+import type { ApproverSlot, Role, Stage } from "./types";
 
 export const ROLE_LABELS: Record<Role, string> = {
   ADMIN: "מנהל מערכת",

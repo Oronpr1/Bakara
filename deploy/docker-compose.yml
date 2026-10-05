@@ -1,0 +1,65 @@
+# Production on a single Linux server with Docker. Run from this folder:
+#   cp .env.example .env   (fill it in)
+#   docker compose up -d --build
+# Services: PostgreSQL, a one-shot migration, the web app, the notification worker, and
+# (optional, profile "https") Caddy for HTTPS when the server has no reverse proxy yet.
+name: letters
+
+x-app: &app
+  build: { context: .., dockerfile: Dockerfile }
+  image: letters-app
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgres://letters:${POSTGRES_PASSWORD}@db:5432/letters
+    STORAGE_DIR: /data/storage
+  volumes: [storage:/data/storage]
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: letters
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: letters
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U letters -d letters"]
+      interval: 5s
+      retries: 20
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["pnpm", "db:migrate"]
+    depends_on: { db: { condition: service_healthy } }
+
+  web:
+    <<: *app
+    # Only this machine can reach the app directly; a reverse proxy (yours or Caddy below) serves HTTPS.
+    ports: ["127.0.0.1:${WEB_PORT:-3100}:3000"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  worker:
+    <<: *app
+    command: ["pnpm", "--filter", "@al/web", "worker"]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+  caddy:
+    profiles: [https]
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [web]
+
+volumes:
+  pgdata:
+  storage:
+  caddy-data:

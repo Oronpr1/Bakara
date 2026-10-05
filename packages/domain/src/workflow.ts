@@ -1,4 +1,4 @@
-import type { ApproverSlot, LetterState, Stage } from "./types.js";
+import type { ApproverSlot, LetterState, Stage } from "./types";
 
 const ROUND_SLOTS: Partial<Record<Stage, readonly ApproverSlot[]>> = {
   REGISTRATION_ROUND: ["REGISTRATION_MANAGER", "VP_REGISTRATION"],

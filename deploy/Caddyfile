@@ -1,0 +1,12 @@
+# HTTPS with an automatic Let's Encrypt certificate for $DOMAIN.
+{$DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 64MB
+	}
+	reverse_proxy web:3000 {
+		# The app reads the client address from X-Real-IP (login rate limits); set it here
+		# so a visitor cannot forge it.
+		header_up X-Real-IP {remote_host}
+	}
+}

@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/* College workspace palette: calm ink-blue accent on a cool off-white, semantic stage colors. */
+:root {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --fg: #1b2433;
+  --muted: #5b6676;
+  --line: #dce1e8;
+  --accent: #1f4f8f;
+  --accent-fg: #ffffff;
+  --accent-soft: #e5edf7;
+  --good: #1d7a45;
+  --good-soft: #e2f3e9;
+  --warn: #965a00;
+  --warn-soft: #fbefd9;
+  --bad: #a4302a;
+  --bad-soft: #f8e2e0;
+  --brand: #1e3a5f;
+  --brand-fg: #ffffff;
+  --surface-2: #f9fafc;
+  --line-strong: #c3cbd7;
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-lg: 0 12px 32px rgb(16 24 40 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11161d;
+    --surface: #19202a;
+    --fg: #e3e8ef;
+    --muted: #98a3b3;
+    --line: #2c3542;
+    --accent: #7eacea;
+    --accent-fg: #0d1520;
+    --accent-soft: #1b2b40;
+    --good: #6fcf97;
+    --good-soft: #163223;
+    --warn: #e8b45c;
+    --warn-soft: #342814;
+    --bad: #f08a82;
+    --bad-soft: #3a1c1a;
+    --brand: #0f1d31;
+    --brand-fg: #e3e8ef;
+    --surface-2: #1d2531;
+    --line-strong: #3b4656;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --color-surface-2: var(--surface-2);
+  --color-line-strong: var(--line-strong);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+  --font-sans: var(--font-assistant), "Segoe UI", Arial, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Icons sit on the text line and mirror nothing: arrows that mean "back" are chosen per direction. */
+.lucide {
+  flex-shrink: 0;
+}
+
+/* Summary rows behave like buttons: no default marker, a chevron that turns when open. */
+summary {
+  cursor: pointer;
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+details[open] > summary .chev {
+  transform: rotate(90deg);
+}
+.chev {
+  transition: transform 150ms ease-out;
+}
+
+dialog::backdrop {
+  background: rgb(10 16 26 / 0.5);
+}
+
+@keyframes skeleton {
+  50% {
+    opacity: 0.5;
+  }
+}
+.skeleton {
+  background: var(--line);
+  border-radius: 0.375rem;
+  animation: skeleton 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

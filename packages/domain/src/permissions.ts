@@ -1,5 +1,5 @@
-import type { Actor, ApproverSlot, LetterState, Role } from "./types.js";
-import { hasApproved, roundOfSlot, stageIndex } from "./workflow.js";
+import type { Actor, ApproverSlot, LetterState, Role } from "./types";
+import { hasApproved, roundOfSlot, stageIndex } from "./workflow";
 
 /** Actions that do not belong to a single letter. */
 export type GlobalAction =

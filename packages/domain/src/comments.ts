@@ -1,4 +1,4 @@
-import type { CommentStatus } from "./types.js";
+import type { CommentStatus } from "./types";
 
 /** A marked area on one page of one PDF version, in page-relative units (0..1). */
 export interface CommentAnchor {

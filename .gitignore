@@ -8,3 +8,6 @@ coverage
 .storage
 playwright-report
 test-results
+.claude/worktrees
+*.tsbuildinfo
+next-env.d.ts
