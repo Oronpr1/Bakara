@@ -57,10 +57,12 @@ describe.skipIf(!process.env.DATABASE_URL)("notification worker", () => {
   });
 
   it("reminds only the approver still waiting, once per interval", async () => {
-    expect(await queueReminders()).toBe(1);
-    const rows = await getDb().select().from(schema.notifications).where(eq(schema.notifications.letterId, letterId));
-    expect(rows.map((r) => r.userId)).toEqual([ids.rm]);
-    expect(await queueReminders()).toBe(0);
+    // Counted on this letter only: other letters in a shared dev database may be due too.
+    const mine = () => getDb().select().from(schema.notifications).where(eq(schema.notifications.letterId, letterId));
+    await queueReminders();
+    expect((await mine()).map((r) => r.userId)).toEqual([ids.rm]);
+    await queueReminders();
+    expect(await mine()).toHaveLength(1);
   });
 
   it("batches a user's notifications into one email after they settle", async () => {
