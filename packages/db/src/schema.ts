@@ -101,6 +101,10 @@ export const letterRequests = pgTable(
     /** The live working DOCX in SharePoint, once Microsoft 365 is connected. */
     sharepointDriveId: text("sharepoint_drive_id"),
     sharepointItemId: text("sharepoint_item_id"),
+    /** The file's web URL; the Word add-in identifies the open letter by it. */
+    sharepointWebUrl: text("sharepoint_web_url"),
+    /** Content tag of the live file when the last official version was taken from it. */
+    sharepointVersionCTag: text("sharepoint_version_ctag"),
     stageChangedAt: timestamp("stage_changed_at", { withTimezone: true }).notNull().defaultNow(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     createdBy: uuid("created_by").references(() => users.id),
