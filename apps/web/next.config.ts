@@ -11,6 +11,7 @@ const securityHeaders = [
 const config: NextConfig = {
   transpilePackages: ["@al/domain", "@al/db", "@al/pdf-review"],
   poweredByHeader: false,
+  devIndicators: false,
   experimental: {
     // A version upload carries a DOCX and a PDF of up to 30MB each, plus multipart overhead.
     serverActions: { bodySizeLimit: "62mb" },
