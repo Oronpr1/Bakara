@@ -4,7 +4,7 @@ import { ACTIONS, COMMENT_STATUSES } from "@al/domain";
 import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { formObject, runAction } from "@/lib/actions";
-import { setCommentStatus } from "@/lib/letters/comments";
+import { createComment, replyToComment, setCommentStatus } from "@/lib/letters/comments";
 import {
   addAcademicApprover,
   approveLetter,
@@ -100,6 +100,47 @@ export async function changeAdvisorAction(_prev: ActionResult, form: FormData): 
     (actor, d) => changeAdvisor(actor, d.letterId, d.advisorId),
     paths,
     "היועצת הוחלפה",
+  );
+}
+
+const unit = z.coerce.number().min(0).max(1);
+
+/** A new comment on a marked area. The snapshot PNG is cut in the browser from the rendered page. */
+export async function createCommentAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({
+      letterId,
+      versionNumber: z.coerce.number().int().min(1),
+      page: z.coerce.number().int().min(1),
+      x: unit,
+      y: unit,
+      width: unit,
+      height: unit,
+      body: z.string({ message: "צריך לכתוב את ההערה" }).trim().min(1, { message: "צריך לכתוב את ההערה" }).max(4000),
+      snapshot: z.instanceof(File).optional(),
+    }),
+    formObject(form),
+    async (actor, d) =>
+      createComment(actor, d.letterId, {
+        anchor: { versionNumber: d.versionNumber, page: d.page, x: d.x, y: d.y, width: d.width, height: d.height },
+        body: d.body,
+        snapshotPng: d.snapshot && d.snapshot.size > 0 ? new Uint8Array(await d.snapshot.arrayBuffer()) : undefined,
+      }),
+    paths,
+    "ההערה נוספה",
+  );
+}
+
+export async function replyAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({
+      letterId,
+      commentId: z.uuid(),
+      body: z.string({ message: "צריך לכתוב תגובה" }).trim().min(1, { message: "צריך לכתוב תגובה" }).max(4000),
+    }),
+    formObject(form),
+    (actor, d) => replyToComment(actor, d.commentId, d.body),
+    paths,
   );
 }
 

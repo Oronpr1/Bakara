@@ -26,6 +26,9 @@ importers:
       '@al/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@al/pdf-review':
+        specifier: workspace:*
+        version: link:../../packages/pdf-review
       '@azure/identity':
         specifier: ^4.13.3
         version: 4.13.3

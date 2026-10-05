@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "al-pdf-review-copy-worker public && next dev",
+    "build": "al-pdf-review-copy-worker public && next build",
     "start": "next start",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@al/db": "workspace:*",
     "@al/domain": "workspace:*",
+    "@al/pdf-review": "workspace:*",
     "@azure/identity": "^4.13.3",
     "@azure/storage-blob": "^12.34.0",
     "drizzle-orm": "^0.45.3",

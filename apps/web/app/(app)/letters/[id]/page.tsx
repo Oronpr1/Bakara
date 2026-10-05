@@ -9,11 +9,10 @@ import { AppError } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { getLetterDetail, isOverdue, waitingOn } from "@/lib/letters/queries";
 import { ApproversPanel } from "./ApproversPanel";
-import { Comments } from "./Comments";
 import { History } from "./History";
 import { StageStrip } from "./StageStrip";
 import { Versions } from "./Versions";
-import { ViewerPlaceholder } from "./ViewerPlaceholder";
+import { ReviewRoom } from "./ReviewRoom";
 import { WorkflowActions } from "./WorkflowActions";
 
 export const metadata = { title: "מכתב · מכתבי קבלה" };
@@ -36,7 +35,24 @@ export default async function LetterPage({
   const { row, state, season, names } = detail;
   const can = (a: LetterAction) => canOnLetter(actor, a, state);
   const history = tab === "history";
-  const latestPdf = detail.versions[0];
+  const name = (uid: string | null) => (uid && names.get(uid)) || "—";
+  const roomComments = detail.comments.map((c, i) => ({
+    id: c.id,
+    n: i + 1,
+    versionNumber: c.versionNumber,
+    page: c.page,
+    x: c.x,
+    y: c.y,
+    width: c.width,
+    height: c.height,
+    status: c.status,
+    body: c.body,
+    author: name(c.authorId),
+    createdAt: c.createdAt.toISOString(),
+    hasSnapshot: Boolean(c.snapshotKey),
+    fixedInVersion: c.fixedInVersion,
+    replies: c.replies.map((r) => ({ id: r.id, author: name(r.authorId), body: r.body, createdAt: r.createdAt.toISOString() })),
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -98,16 +114,20 @@ export default async function LetterPage({
       {history ? (
         <History detail={detail} />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <div className="flex min-w-0 flex-col gap-6">
-            <WorkflowActions detail={detail} can={can} />
-            <ViewerPlaceholder pdfHref={latestPdf ? `/api/versions/${latestPdf.id}/pdf` : undefined} />
-            <Comments detail={detail} canSetStatus={can("SET_COMMENT_STATUS")} />
-          </div>
-          <aside className="flex min-w-0 flex-col gap-6" aria-label="מאשרים וגרסאות">
+        <div className="flex flex-col gap-6">
+          <WorkflowActions detail={detail} can={can} />
+          <ReviewRoom
+            letterId={row.id}
+            versions={detail.versions.map((v) => ({ id: v.id, number: v.number }))}
+            comments={roomComments}
+            canComment={can("COMMENT")}
+            canReply={can("REPLY")}
+            canSetStatus={can("SET_COMMENT_STATUS")}
+          />
+          <div className="grid items-start gap-6 lg:grid-cols-2">
             <ApproversPanel detail={detail} can={can} viewerId={user.id} />
             <Versions detail={detail} canUpload={can("UPLOAD_VERSION")} />
-          </aside>
+          </div>
         </div>
       )}
     </div>
