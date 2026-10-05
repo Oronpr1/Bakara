@@ -10,7 +10,7 @@ import {
   WorkflowError,
   type Actor,
   type LetterState,
-} from "./index.js";
+} from "./index";
 
 const cm: Actor = { userId: "cm", roles: ["CONTROL_MANAGER"] };
 const vp: Actor = { userId: "vp", roles: ["VP_REGISTRATION"] };

@@ -1,7 +1,7 @@
 // Development seed: one user per role and an active season. Never run against production.
 import type { Role } from "@al/domain";
-import { closeDb, getDb } from "./index.js";
-import { seasons, users } from "./schema.js";
+import { closeDb, getDb } from "./index";
+import { seasons, users } from "./schema";
 
 if (process.env.NODE_ENV === "production") throw new Error("Refusing to seed in production");
 

@@ -8,3 +8,4 @@ coverage
 .storage
 playwright-report
 test-results
+.claude/worktrees
