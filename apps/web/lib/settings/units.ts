@@ -53,8 +53,12 @@ export async function getUnitsBoard(actor: Actor, seasonId: string | null) {
         missingManager: mine.filter((t) => t.missingManager).length,
       };
     });
+    // Faculties with tracks this season first.
+    units.sort((a, b) => Number(b.tracks > 0) - Number(a.tracks > 0) || a.faculty.localeCompare(b.faculty, "he"));
     return { ...c, units, tracks: units.reduce((n, u) => n + u.tracks, 0) };
   });
+  // Campuses with tracks this season first; the rest (set up in other seasons) after them.
+  views.sort((a, b) => Number(b.tracks > 0) - Number(a.tracks > 0) || a.name.localeCompare(b.name, "he"));
 
   const ref = (id: string | null): PersonRef | null => (id ? { id, name: names.get(id) ?? "—" } : null);
   return {

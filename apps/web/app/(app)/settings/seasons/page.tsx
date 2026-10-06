@@ -21,7 +21,10 @@ export const metadata = { title: "עונות · הגדרות · מכתבי קב�
 
 export default async function SeasonsSettingsPage() {
   if (!canOpenTab(actorOf(await requireUser()), "seasons")) notFound();
-  const [{ current, seasons }, facts] = await Promise.all([currentSeason(), seasonFacts()]);
+  const [{ current, seasons: all }, facts] = await Promise.all([currentSeason(), seasonFacts()]);
+  // The season being worked on first, then the other active ones, the archive last (newest first in each).
+  const rank = (s: (typeof all)[number]) => (s.id === current?.id ? 0 : s.status === "ACTIVE" ? 1 : 2);
+  const seasons = [...all].sort((a, b) => rank(a) - rank(b));
   const settingsOf = (s: (typeof seasons)[number]) => ({
     reminderIntervalDays: s.reminderIntervalDays,
     sequentialReview: s.sequentialReview,
