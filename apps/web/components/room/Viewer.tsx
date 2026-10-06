@@ -19,6 +19,12 @@ configurePdfWorker("/pdf.worker.min.mjs");
 
 export type { DrawResult, ReviewComment };
 
+/**
+ * A mark made on the page. Today the viewer makes area marks; the coming viewer adds a kind (a
+ * note, an X, a line), a colour and the line's points (page-relative 0..1), which pass straight on.
+ */
+export type MarkResult = DrawResult & { kind?: "NOTE" | "X" | "LINE"; color?: string; points?: { x: number; y: number }[] };
+
 export interface ViewerProps {
   src: string;
   versionNumber: number;
@@ -28,7 +34,7 @@ export interface ViewerProps {
   canDraw: boolean;
   drawMode: boolean;
   onDrawModeChange: (on: boolean) => void;
-  onDraw: (result: DrawResult) => void;
+  onDraw: (result: MarkResult) => void;
   showResolved: boolean;
   className?: string;
 }

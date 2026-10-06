@@ -10,7 +10,8 @@ import type { ActionResult } from "@/lib/action-result";
 import { formObject, runAction } from "@/lib/actions";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
-import { userMessage } from "@/lib/errors";
+import { AppError, userMessage } from "@/lib/errors";
+import * as commentsService from "@/lib/letters/comments";
 import { createComment, deleteDraftComment, replyToComment, setCommentStatus } from "@/lib/letters/comments";
 import { openInWord, versionFromSharePoint } from "@/lib/letters/live-file";
 import { listUsers } from "@/lib/letters/queries";
@@ -184,32 +185,128 @@ export async function versionFromSharePointAction(_prev: ActionResult, form: For
 const unit = z.coerce.number().min(0).max(1);
 const text = (msg: string) => z.string({ message: msg }).trim().min(1, { message: msg }).max(4000);
 
+/** The kinds of marks on the page: a note (text), an X, or a line. An X or a line with no text is a mark only. */
+const MARK_KINDS = ["NOTE", "X", "LINE"] as const;
+type MarkKind = (typeof MARK_KINDS)[number];
+type MarkPoint = { x: number; y: number };
+/** What the comments service takes beyond the anchor and text (kind, colour, the line's points). */
+type MarkExtras = { kind?: MarkKind; color?: string; points?: MarkPoint[] };
+
+const color = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, { message: "צבע לא תקין" })
+  .optional();
+const pointList = z.array(z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })).max(500);
+/** A line's points arrive from the form as JSON text. */
+const pointsJson = z
+  .string()
+  .max(20000)
+  .optional()
+  .transform((s, ctx) => {
+    if (!s) return undefined;
+    const parsed = pointList.safeParse((() => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    })());
+    if (!parsed.success) {
+      ctx.addIssue({ code: "custom", message: "הקו שסומן לא תקין" });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
+
 /** A new comment on a marked area. The snapshot PNG is cut in the browser from the rendered page. */
 export async function createCommentAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({
-      letterId,
-      versionNumber: z.coerce.number().int().min(1),
-      page: z.coerce.number().int().min(1),
-      x: unit,
-      y: unit,
-      width: unit,
-      height: unit,
-      body: text("צריך לכתוב את ההערה"),
-      from: z.string().max(1500).optional(),
-      to: z.string().max(1500).optional(),
-      snapshot: z.instanceof(File).optional(),
-    }),
+    z
+      .object({
+        letterId,
+        versionNumber: z.coerce.number().int().min(1),
+        page: z.coerce.number().int().min(1),
+        x: unit,
+        y: unit,
+        width: unit,
+        height: unit,
+        kind: z.enum(MARK_KINDS).optional(),
+        color,
+        points: pointsJson,
+        body: z.string().trim().max(4000).optional(),
+        from: z.string().max(1500).optional(),
+        to: z.string().max(1500).optional(),
+        snapshot: z.instanceof(File).optional(),
+      })
+      // A note needs its text; an X or a line may stand alone.
+      .refine((d) => d.kind === "X" || d.kind === "LINE" || Boolean(d.body), { message: "צריך לכתוב את ההערה", path: ["body"] }),
     formObject(form),
-    async (actor, d) =>
-      createComment(actor, d.letterId, {
+    async (actor, d) => {
+      // Built as a variable so the extra fields pass through whether or not the service declares them yet.
+      const input: Parameters<typeof createComment>[2] & MarkExtras = {
         anchor: { versionNumber: d.versionNumber, page: d.page, x: d.x, y: d.y, width: d.width, height: d.height },
-        body: d.body,
+        body: d.body ?? "",
         suggestion: composeSuggestion(d.from, d.to),
         snapshotPng: d.snapshot && d.snapshot.size > 0 ? new Uint8Array(await d.snapshot.arrayBuffer()) : undefined,
-      }),
+        kind: d.kind,
+        color: d.color,
+        points: d.points,
+      };
+      return createComment(actor, d.letterId, input);
+    },
     paths,
     "ההערה נשמרה",
+  );
+}
+
+export interface DraftPatch {
+  anchor?: { versionNumber: number; page: number; x: number; y: number; width: number; height: number };
+  color?: string;
+  points?: MarkPoint[];
+  body?: string;
+  suggestion?: string;
+}
+
+const draftPatch = z.object({
+  letterId,
+  commentId: z.uuid(),
+  patch: z
+    .object({
+      anchor: z
+        .object({
+          versionNumber: z.number().int().min(1),
+          page: z.number().int().min(1),
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+          width: z.number().min(0).max(1),
+          height: z.number().min(0).max(1),
+        })
+        .optional(),
+      color,
+      points: pointList.optional(),
+      body: z.string().trim().max(4000).optional(),
+      suggestion: z.string().trim().max(3100).optional(),
+    })
+    .strict(),
+});
+
+/**
+ * Edits one of my draft marks (move it, change its colour or line, its text). Called by the viewer
+ * with plain data, not from a form; the comments service's `updateDraftComment` checks it is mine.
+ */
+export async function updateDraftAction(input: { letterId: string; commentId: string; patch: DraftPatch }): Promise<ActionResult> {
+  return runAction(
+    draftPatch,
+    input,
+    async (actor, d) => {
+      // Looked up by name so this file builds before the service gains the function.
+      const update = (commentsService as unknown as Record<string, unknown>).updateDraftComment as
+        | ((actor: unknown, commentId: string, patch: DraftPatch) => Promise<unknown>)
+        | undefined;
+      if (typeof update !== "function") throw new AppError("INVALID", "עריכת טיוטה עוד לא זמינה");
+      await update(actor, d.commentId, d.patch);
+    },
+    paths,
   );
 }
 

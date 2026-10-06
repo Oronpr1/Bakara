@@ -13,7 +13,7 @@ import { PeoplePanel } from "./PeoplePanel";
 import { Timeline } from "./Timeline";
 import { Toaster } from "./Toast";
 import { VersionsPanel } from "./VersionsPanel";
-import { Viewer, type DrawResult, type ReviewComment } from "./Viewer";
+import { Viewer, type MarkResult, type ReviewComment } from "./Viewer";
 
 type Tab = "comments" | "people" | "time" | "versions";
 const DRAFT_ID = "__draft__";
@@ -83,7 +83,7 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
     if (!isDesktop) requestAnimationFrame(() => document.getElementById("room-letter")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
-  function onDraw(result: DrawResult) {
+  function onDraw(result: MarkResult) {
     setDraft({ ...result, previewUrl: URL.createObjectURL(result.snapshot) });
     setDrawMode(false);
     setSelectedId(null);

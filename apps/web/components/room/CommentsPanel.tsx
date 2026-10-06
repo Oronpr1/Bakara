@@ -14,11 +14,11 @@ import { formatDateTime } from "@/lib/format";
 import { parseSuggestion, plural, relativeDay, shortName } from "@/lib/room/view";
 import { Dialog } from "./Dialog";
 import { toast } from "./Toast";
-import type { DrawResult } from "./Viewer";
+import type { MarkResult } from "./Viewer";
 
-export interface DraftMark extends DrawResult {
-  previewUrl: string;
-}
+export type DraftMark = MarkResult & { previewUrl: string };
+
+const KIND_WORDS = { NOTE: "פתק", X: "סימון X", LINE: "קו" } as const;
 
 export interface CommentAbilities {
   /** May write new comments and replies. */
@@ -145,15 +145,25 @@ function NewCommentForm({ letterId, draft, onDone, notice }: { letterId: string;
     form.set("letterId", letterId);
     for (const k of ["versionNumber", "page", "x", "y", "width", "height"] as const) form.set(k, String(anchor[k]));
     form.set("snapshot", new File([draft.snapshot], "snapshot.png", { type: "image/png" }));
+    if (draft.kind) form.set("kind", draft.kind);
+    if (draft.color) form.set("color", draft.color);
+    if (draft.points?.length) form.set("points", JSON.stringify(draft.points));
     startTransition(() => dispatch(form));
   }
+
+  // An X or a line can stand alone (a mark only); a note needs its text.
+  const markOnly = draft.kind === "X" || draft.kind === "LINE";
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-lg border border-accent/60 bg-accent-soft/40 p-3" aria-label="הערה חדשה">
       <div className="flex items-center justify-between gap-2">
         <p className="flex items-center gap-2 text-sm font-semibold">
-          <MessageSquarePlus aria-hidden className="size-4 text-accent" />
-          הערה חדשה · עמוד {draft.anchor.page}
+          {draft.color ? (
+            <span aria-hidden className="size-3.5 rounded-full ring-1 ring-line-strong" style={{ background: draft.color }} />
+          ) : (
+            <MessageSquarePlus aria-hidden className="size-4 text-accent" />
+          )}
+          {draft.kind ? KIND_WORDS[draft.kind] : "הערה"} חדשה · עמוד {draft.anchor.page}
         </p>
         <button type="button" onClick={onDone} className="inline-flex size-9 items-center justify-center rounded-md text-muted hover:bg-surface" aria-label="ביטול ההערה">
           <X aria-hidden className="size-4" />
@@ -162,8 +172,8 @@ function NewCommentForm({ letterId, draft, onDone, notice }: { letterId: string;
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={draft.previewUrl} alt="האזור שסומן" className="max-h-32 self-start rounded border border-line bg-white" />
       <label className="flex flex-col gap-1.5">
-        <span className={label}>מה צריך לתקן?</span>
-        <textarea name="body" required maxLength={4000} rows={3} className={input} autoFocus />
+        <span className={label}>{markOnly ? "הסבר (לא חובה)" : "מה צריך לתקן?"}</span>
+        <textarea name="body" required={!markOnly} maxLength={4000} rows={3} className={input} autoFocus />
       </label>
       {suggest ? (
         <fieldset className="flex flex-col gap-2 rounded-md border border-line bg-surface p-2.5">
@@ -187,7 +197,7 @@ function NewCommentForm({ letterId, draft, onDone, notice }: { letterId: string;
       <div className="flex flex-wrap items-center gap-2">
         <button className={btnPrimary} disabled={pending}>
           {pending ? <Spinner /> : <MessageSquarePlus aria-hidden className="size-4" />}
-          {pending ? "שומר…" : "שמור הערה"}
+          {pending ? "שומר…" : markOnly ? "שמור סימון" : "שמור הערה"}
         </button>
         <button type="button" className={btnSecondary} onClick={onDone} disabled={pending}>
           ביטול
@@ -220,6 +230,9 @@ function CommentCard({
   const open = c.status === "OPEN";
   const s = parseSuggestion(c.suggestion);
   const mayReopen = !open && !c.isDraft && !can.closed && (mine || can.reopenAny);
+  // Marks of the coming viewer carry a kind and a colour; older comments have neither.
+  const mark = c as RoomComment & { kind?: string | null; color?: string | null };
+  const markKind = mark.kind === "X" || mark.kind === "LINE" || mark.kind === "NOTE" ? mark.kind : null;
 
   return (
     <li
@@ -237,6 +250,7 @@ function CommentCard({
           }`}
           aria-label={`הצג את הערה ${n} במכתב`}
           title="הצג במכתב"
+          style={mark.color ? { boxShadow: `0 0 0 3px ${mark.color}` } : undefined}
         >
           {n}
         </button>
@@ -249,7 +263,11 @@ function CommentCard({
         {c.isDraft ? <Tag tone="accent">טיוטה</Tag> : <CommentStatusPill status={c.status} />}
       </div>
 
-      <p className="whitespace-pre-wrap break-words">{c.body}</p>
+      {c.body ? (
+        <p className="whitespace-pre-wrap break-words">{c.body}</p>
+      ) : (
+        <p className="text-sm text-muted">{markKind === "X" || markKind === "LINE" ? `${KIND_WORDS[markKind]} על המכתב, בלי הסבר` : "סימון על המכתב"}</p>
+      )}
 
       {(s.from || s.to || s.raw) && (
         <div className="flex flex-col gap-1 rounded-md border-s-4 border-accent bg-accent-soft/50 px-3 py-2 text-sm">

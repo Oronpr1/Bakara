@@ -9,7 +9,7 @@ import { myDrafts, plural, shortName, type RoomProps } from "@/lib/room/view";
 import { CommentsPanel, type DraftMark } from "./CommentsPanel";
 import { DecideDialog, type DecideTarget } from "./DecideDialog";
 import { Toaster } from "./Toast";
-import { Viewer, type DrawResult, type ReviewComment } from "./Viewer";
+import { Viewer, type MarkResult, type ReviewComment } from "./Viewer";
 
 const DRAFT_ID = "__draft__";
 
@@ -46,7 +46,7 @@ export function AcademicRoom({ room }: { room: RoomProps }) {
     return list;
   }, [room.comments, numbers, draft, latest?.number]);
 
-  function onDraw(result: DrawResult) {
+  function onDraw(result: MarkResult) {
     setDraft({ ...result, previewUrl: URL.createObjectURL(result.snapshot) });
     setDrawMode(false);
   }
