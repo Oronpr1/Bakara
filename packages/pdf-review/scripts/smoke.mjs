@@ -410,6 +410,13 @@ try {
     // Palette behind one button.
     await page.getByRole("button", { name: /^צבע:/ }).tap();
     assert.ok(await page.locator(".alpr-palette").isVisible(), "palette opens");
+    const pal = await page.locator(".alpr-palette").boundingBox();
+    assert.ok(pal.x >= 0 && pal.x + pal.width <= 390, `palette inside the screen (${pal.x}..${pal.x + pal.width})`);
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
+      0,
+      "an open palette does not widen the page",
+    );
     await shot("phone-palette");
     await page.getByRole("radio", { name: "ירוק" }).tap();
     assert.ok(!(await page.locator(".alpr-palette").isVisible()), "palette closes");
@@ -445,6 +452,7 @@ try {
     assert.equal(ev.color, "#16a34a");
     near(ev.anchor.y + ev.anchor.height / 2, 0.4, 0.003, "phone tap centre y");
     await page.waitForSelector(".alpr-mark[data-selected][data-draft] .alpr-sticker");
+    await page.waitForSelector(".alpr-hint", { state: "detached", timeout: 1_000 });
     const created = ev.anchor;
     const st = await page.locator(".alpr-mark[data-selected] .alpr-sticker").boundingBox();
     const top0 = await sc.evaluate((el) => el.scrollTop);

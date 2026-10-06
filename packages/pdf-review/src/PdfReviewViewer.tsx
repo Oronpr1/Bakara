@@ -283,6 +283,10 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
     const t = window.setTimeout(() => setHint(null), HINT_MS);
     return () => window.clearTimeout(t);
   }, [hint]);
+  // The hint belongs to the tool: gone once the tool is put down.
+  useEffect(() => {
+    if (tool === "select") setHint(null);
+  }, [tool]);
 
   /* ---------- loading ---------- */
   useEffect(() => {
@@ -508,10 +512,10 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
   const canEdit = (c: ReviewComment | undefined) => !!c?.draft && !!props.onUpdateDraft;
   const canDelete = !!selected?.draft && !!props.onDelete;
 
-  // The host selected a mark: open its preview.
+  // The host selected a mark: open its preview (when it has text to show).
   useEffect(() => {
     const c = selectedCommentId ? comments.find((x) => x.id === selectedCommentId) : undefined;
-    setOpenId(c?.kind ? c.id : null);
+    setOpenId(c?.kind && c.label?.trim() ? c.id : null);
   }, [selectedCommentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A press anywhere but on a mark closes an open preview.

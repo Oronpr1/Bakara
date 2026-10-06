@@ -73,7 +73,7 @@ export function MarkView(p: MarkViewProps) {
   const style = {
     "--mark": p.color,
     "--mark-soft": withAlpha(p.color, 0.14),
-    "--mark-strong": withAlpha(p.color, 0.28),
+    "--mark-strong": withAlpha(p.color, 0.2),
     "--mark-ink": inkOn(p.color),
     "--mark-fold": shade(p.color, 0.3),
   } as CSSProperties;
