@@ -1,9 +1,9 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { Spinner } from "@/components/Spinner";
 import { input, label as labelClass } from "@/components/ui";
 import { type Filters, filterQuery, type Option, SORT_LABELS, SORTS } from "@/lib/home/model";
@@ -88,6 +88,9 @@ export function FilterBar({
   const narrowed = Boolean(filters.campus || filters.faculty || filters.q || filters.advisor || filters.rm || filters.holder);
   // The search takes twice a select's width on wide screens; every select gets an equal share.
   const selects = 1 + Number(showCampus) + Number(showFaculty) + (byPeople ? 2 : 0);
+  const activeSelects = [filters.campus, filters.faculty, filters.advisor, filters.rm, filters.sort && filters.sort !== "wait"].filter(Boolean).length;
+  const [open, setOpen] = useState(activeSelects > 0);
+  const moreId = useId();
 
   return (
     <div className="flex flex-col gap-2">
@@ -107,31 +110,47 @@ export function FilterBar({
           <label htmlFor={searchId} className={labelClass}>
             חיפוש מסלול
           </label>
-          <div className="relative">
-            <Search aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-            <input
-              ref={search}
-              id={searchId}
-              name="q"
-              type="search"
-              defaultValue={filters.q}
-              placeholder="שם מסלול או קוד"
-              autoComplete="off"
-              enterKeyHint="search"
-              className={`${input} ps-9`}
-              onChange={(e) => {
-                const form = e.currentTarget.form;
-                clearTimeout(timer.current);
-                timer.current = setTimeout(() => form && go(form), 350);
-              }}
-            />
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search aria-hidden className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <input
+                ref={search}
+                id={searchId}
+                name="q"
+                type="search"
+                defaultValue={filters.q}
+                placeholder="שם מסלול או קוד"
+                autoComplete="off"
+                enterKeyHint="search"
+                className={`${input} ps-9`}
+                onChange={(e) => {
+                  const form = e.currentTarget.form;
+                  clearTimeout(timer.current);
+                  timer.current = setTimeout(() => form && go(form), 350);
+                }}
+              />
+            </div>
+            {/* Phones: the selects fold away behind one button, so the letters come sooner. */}
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-controls={moreId}
+              className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong bg-surface px-3 text-sm font-semibold md:hidden"
+            >
+              <SlidersHorizontal aria-hidden className="size-4" />
+              סינון
+              {activeSelects > 0 && <span className="tabular grid size-5 place-items-center rounded-full bg-accent text-xs text-accent-fg">{activeSelects}</span>}
+            </button>
           </div>
         </div>
-        {showCampus && <Select label="קמפוס" name="campus" value={filters.campus} options={options.campuses} all="כל הקמפוסים" />}
-        {showFaculty && <Select label="פקולטה" name="faculty" value={filters.faculty} options={options.faculties} all="כל הפקולטות" />}
-        {byPeople && <Select label="יועצת" name="advisor" value={filters.advisor} options={options.advisors} all="כל היועצות" />}
-        {byPeople && <Select label="מנהל רישום" name="rm" value={filters.rm} options={options.managers} all="כל מנהלי הרישום" />}
-        <Select label="מיון" name="sort" value={filters.sort} options={SORTS.map((s) => ({ value: s, label: SORT_LABELS[s] }))} />
+        <div id={moreId} className={`${open ? "grid" : "hidden"} col-span-2 grid-cols-2 gap-3 md:contents`}>
+          {showCampus && <Select label="קמפוס" name="campus" value={filters.campus} options={options.campuses} all="כל הקמפוסים" />}
+          {showFaculty && <Select label="פקולטה" name="faculty" value={filters.faculty} options={options.faculties} all="כל הפקולטות" />}
+          {byPeople && <Select label="יועצת" name="advisor" value={filters.advisor} options={options.advisors} all="כל היועצות" />}
+          {byPeople && <Select label="מנהל רישום" name="rm" value={filters.rm} options={options.managers} all="כל מנהלי הרישום" />}
+          <Select label="מיון" name="sort" value={filters.sort} options={SORTS.map((s) => ({ value: s, label: SORT_LABELS[s] }))} />
+        </div>
         <button className="sr-only">החל סינון</button>
       </form>
 

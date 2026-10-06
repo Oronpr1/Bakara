@@ -1,7 +1,7 @@
 // The top of the home screen: "how many letters are mine, and where they stand". Each tile is a
 // link that filters the list below (kept in the address, so a view can be shared and returned to).
 import { PHASES, STATE_LABELS, type Phase } from "@al/domain";
-import { Check } from "lucide-react";
+import { Check, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { PHASE_ICONS, PHASE_LABELS, PHASE_TONES } from "@/components/Pills";
 import { type Filters, filterQuery, type Group, GROUP_TITLES, type HomeLetter, inGroup, oldestWait, phaseCounts, stateBreakdown } from "@/lib/home/model";
@@ -57,7 +57,11 @@ export function PersonalTiles({
 }) {
   if (groups.length === 0) return null;
   return (
-    <ul className={`grid grid-cols-2 gap-3 ${groups.length >= 4 ? "lg:grid-cols-4" : groups.length === 3 ? "sm:grid-cols-3" : ""}`}>
+    <ul
+      className={`grid gap-3 ${
+        groups.length === 1 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : groups.length >= 4 ? "grid-cols-2 lg:grid-cols-4" : groups.length === 3 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"
+      }`}
+    >
       {groups.map((g) => {
         const inside = items.filter((l) => inGroup(l, g, me));
         const Icon = PERSONAL_ICONS[g]!;
@@ -189,12 +193,15 @@ export function StatusSummary({
   filters,
   current,
   title,
+  foldOnPhone = false,
 }: {
   items: HomeLetter[];
   label: string;
   filters: Filters;
   current: Group;
   title?: string;
+  /** On phones, keep the five phase tiles behind a disclosure. */
+  foldOnPhone?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -202,7 +209,25 @@ export function StatusSummary({
       <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
         <ProgressBar items={items} label={label} />
       </div>
-      <PhaseTiles items={items} filters={filters} current={current} />
+      {foldOnPhone ? (
+        <>
+          <div className="hidden sm:block">
+            <PhaseTiles items={items} filters={filters} current={current} />
+          </div>
+          {/* Phones: the reviewer's own list matters more than the season's phases; one tap away. */}
+          <details className="group sm:hidden" open={PHASES.includes(current as Phase)}>
+            <summary className="inline-flex min-h-11 items-center gap-1.5 font-semibold text-accent">
+              <ChevronLeft aria-hidden className="chev size-4" />
+              פירוט לפי שלב
+            </summary>
+            <div className="pt-2">
+              <PhaseTiles items={items} filters={filters} current={current} />
+            </div>
+          </details>
+        </>
+      ) : (
+        <PhaseTiles items={items} filters={filters} current={current} />
+      )}
     </div>
   );
 }

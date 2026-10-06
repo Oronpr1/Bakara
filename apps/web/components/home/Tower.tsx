@@ -203,14 +203,20 @@ function attentionEntries(tower: TowerData, items: HomeLetter[], filters: Filter
       details: (
           <ul className="flex flex-col gap-1.5 text-sm">
             {units.map((u) => (
-              <li key={`${u.campus}-${u.faculty}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-semibold">
-                  {u.campus} · {u.faculty}
+              <li key={`${u.campus}-${u.faculty}`} className="flex items-center justify-between gap-3 border-t border-bad/20 pt-1.5 first:border-t-0 first:pt-0">
+                <span className="flex min-w-0 flex-col">
+                  <span className="font-semibold">
+                    {u.campus} · {u.faculty}
+                  </span>
+                  <span className="text-muted">
+                    {letters(u.count)} · {[...u.missing].map((b) => BLOCKER_LABELS[b]).join(", ")}
+                  </span>
                 </span>
-                <span className="text-muted">
-                  ({letters(u.count)}): {[...u.missing].map((b) => BLOCKER_LABELS[b]).join(", ")}
-                </span>
-                <Link href="/settings" className="inline-flex min-h-9 items-center gap-1 font-semibold text-bad underline-offset-4 hover:underline">
+                <Link
+                  href="/settings"
+                  className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-md px-2 font-semibold text-bad hover:bg-bad-soft sm:min-h-9"
+                  aria-label={`להקמת בעל תפקיד: ${u.campus} · ${u.faculty}`}
+                >
                   <Settings aria-hidden className="size-3.5" />
                   להקמה
                 </Link>

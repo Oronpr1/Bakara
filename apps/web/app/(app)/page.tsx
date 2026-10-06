@@ -133,6 +133,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             filters={filters}
             current={group}
             title={persona.control || persona.vp ? "כל המכתבים בעונה" : "המכתבים ביחידה שלך"}
+            foldOnPhone={!persona.control}
           />
         ) : (
           all.length > 0 && (
