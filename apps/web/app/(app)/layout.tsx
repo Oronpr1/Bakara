@@ -16,6 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nav = [
     { href: "/", label: "העבודה שלי", icon: "home" as const },
     { href: "/seasons", label: "עונות רישום", icon: "seasons" as const },
+    ...(canGlobal(actorOf(user), "MANAGE_UNITS") ? [{ href: "/admin/units", label: "קמפוסים ופקולטות", icon: "units" as const }] : []),
     ...(canGlobal(actorOf(user), "MANAGE_USERS") ? [{ href: "/admin/users", label: "משתמשים", icon: "users" as const }] : []),
   ];
   const roles = user.roles.map((r) => ROLE_LABELS[r]).join(", ");

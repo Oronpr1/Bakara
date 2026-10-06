@@ -25,7 +25,7 @@ import { getFileStore, sha256 } from "../storage";
 import { syncLiveFileLock } from "./live-file-lock";
 import { loadLetter, type LetterRow, type Tx } from "./state";
 
-const { users, seasons, letterRequests, approverAssignments, approvals, versions } = schema;
+const { users, seasons, letterRequests, approverAssignments, approvals, versions, units } = schema;
 
 function ensure(actor: Actor, action: LetterAction, state: LetterState) {
   if (!canOnLetter(actor, action, state)) throw forbidden();
@@ -176,9 +176,12 @@ export interface LetterRequestInput {
   trackName: string;
   trackNumber: string;
   advisorId: string;
-  registrationManagerId: string;
-  vpId: string;
-  academicIds: string[];
+  /** Default: the registration manager of the campus + faculty (set once in "יחידות"). */
+  registrationManagerId?: string;
+  /** Default: the VP of registration (every active user holding the role). */
+  vpId?: string;
+  /** Usually empty: the academic approver is chosen later, once the registration round is done. */
+  academicIds?: string[];
   dueDate?: string | null; // YYYY-MM-DD
 }
 
@@ -188,13 +191,26 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
   if (text.some((s) => !s)) throw new AppError("INVALID", "צריך למלא קמפוס, פקולטה, מסלול ומספר מסלול");
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new AppError("INVALID", "תאריך היעד לא תקין");
 
-  return db.transaction(async (tx) => {
-    await assertRole(tx, [input.advisorId], "CONTROL_ADVISOR");
-    await assertRole(tx, [input.registrationManagerId], "REGISTRATION_MANAGER");
-    await assertRole(tx, [input.vpId], "VP_REGISTRATION");
-    await assertRole(tx, input.academicIds, "ACADEMIC_APPROVER");
+  const [campus, faculty, trackName, trackNumber] = text as [string, string, string, string];
+  // Registered even when this attempt is refused below, so the campus + faculty shows up in the
+  // screen where its registration manager is set.
+  await db.insert(units).values({ campus, faculty }).onConflictDoNothing();
 
-    const [campus, faculty, trackName, trackNumber] = text as [string, string, string, string];
+  return db.transaction(async (tx) => {
+    const academicIds = [...new Set(input.academicIds ?? [])];
+    await assertRole(tx, [input.advisorId], "CONTROL_ADVISOR");
+    await assertRole(tx, academicIds, "ACADEMIC_APPROVER");
+
+    // The campus + faculty is a workspace of its own; its registration manager is set once.
+    const [unit] = await tx.select().from(units).where(and(eq(units.campus, campus), eq(units.faculty, faculty)));
+    const registrationManagerId = input.registrationManagerId ?? unit?.registrationManagerId ?? null;
+    if (!registrationManagerId)
+      throw new AppError("INVALID", `לא הוגדר מנהל רישום ל${faculty} ב${campus}. מגדירים אותו פעם אחת במסך "קמפוסים ופקולטות".`);
+    await assertRole(tx, [registrationManagerId], "REGISTRATION_MANAGER");
+    const vpIds = input.vpId ? [input.vpId] : await usersWithRole(tx, "VP_REGISTRATION");
+    if (vpIds.length === 0) throw new AppError("INVALID", 'לא הוגדר סמנכ"ל רישום. מוסיפים משתמש עם התפקיד במסך "משתמשים".');
+    await assertRole(tx, vpIds, "VP_REGISTRATION");
+
     const inserted = await tx
       .insert(letterRequests)
       .values({
@@ -213,9 +229,9 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
     if (!letter) throw new AppError("CONFLICT", "כבר קיימת דרישת מכתב למסלול הזה בקמפוס הזה בעונה הזאת");
 
     const slots: { userId: string; slot: ApproverSlot }[] = [
-      { userId: input.registrationManagerId, slot: "REGISTRATION_MANAGER" },
-      { userId: input.vpId, slot: "VP_REGISTRATION" },
-      ...[...new Set(input.academicIds)].map((userId) => ({ userId, slot: "ACADEMIC" as const })),
+      { userId: registrationManagerId, slot: "REGISTRATION_MANAGER" },
+      ...vpIds.map((userId) => ({ userId, slot: "VP_REGISTRATION" as const })),
+      ...academicIds.map((userId) => ({ userId, slot: "ACADEMIC" as const })),
     ];
     await tx
       .insert(approverAssignments)

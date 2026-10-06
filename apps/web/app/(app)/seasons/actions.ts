@@ -54,16 +54,16 @@ const letterSchema = z.object({
   trackNumber: text("מספר מסלול"),
   dueDate: z.iso.date({ message: "תאריך היעד לא תקין" }).optional(),
   advisorId: id("יועצת בקרה"),
-  registrationManagerId: id("מנהל רישום"),
-  vpId: id('סמנכ"ל רישום'),
-  academicIds: z.array(z.uuid()).min(1, { message: "צריך לבחור לפחות גורם אקדמי אחד" }),
+  registrationManagerId: z.uuid().optional(),
+  vpId: z.uuid().optional(),
+  academicIds: z.array(z.uuid()).optional(),
 });
 
 export async function createLetterAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   let createdId = "";
   const result = await runAction(
     letterSchema,
-    formObject(form, ["academicIds"]),
+    formObject(form),
     async (actor, data) => {
       createdId = (await createLetterRequest(actor, data)).id;
     },

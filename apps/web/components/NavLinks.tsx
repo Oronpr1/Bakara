@@ -1,10 +1,10 @@
 "use client";
 
-import { CalendarRange, Inbox, Users } from "lucide-react";
+import { Building2, CalendarRange, Inbox, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const ICONS = { home: Inbox, seasons: CalendarRange, users: Users };
+const ICONS = { home: Inbox, seasons: CalendarRange, units: Building2, users: Users };
 
 /** The main navigation, marking the section the user is in (aria-current + underline). */
 export function NavLinks({ items }: { items: { href: string; label: string; icon: keyof typeof ICONS }[] }) {

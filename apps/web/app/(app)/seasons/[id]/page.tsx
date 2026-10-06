@@ -113,9 +113,6 @@ export default async function SeasonPage({
                 faculties={faculties}
                 defaultAdvisorId={user.roles.includes("CONTROL_ADVISOR") ? user.id : undefined}
                 advisors={usersWithRole(people, "CONTROL_ADVISOR")}
-                registrationManagers={usersWithRole(people, "REGISTRATION_MANAGER")}
-                vps={usersWithRole(people, "VP_REGISTRATION")}
-                academics={usersWithRole(people, "ACADEMIC_APPROVER")}
               />
             </section>
           </details>

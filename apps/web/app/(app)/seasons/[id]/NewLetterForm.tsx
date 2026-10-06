@@ -1,6 +1,6 @@
 import { FilePlus2 } from "lucide-react";
 import { ActionForm } from "@/components/ActionForm";
-import { CheckboxGroup, Field, SelectField } from "@/components/Field";
+import { Field, SelectField } from "@/components/Field";
 import type { UserOption } from "@/lib/letters/queries";
 import { createLetterAction } from "../actions";
 
@@ -12,18 +12,12 @@ export function NewLetterForm({
   faculties,
   defaultAdvisorId,
   advisors,
-  registrationManagers,
-  vps,
-  academics,
 }: {
   seasonId: string;
   campuses: string[];
   faculties: string[];
   defaultAdvisorId?: string;
   advisors: UserOption[];
-  registrationManagers: UserOption[];
-  vps: UserOption[];
-  academics: UserOption[];
 }) {
   return (
     <ActionForm
@@ -62,24 +56,10 @@ export function NewLetterForm({
           placeholder="בחרו יועצת"
           options={opts(advisors)}
         />
-        <SelectField
-          label="מנהל רישום"
-          name="registrationManagerId"
-          required
-          defaultValue={registrationManagers.length === 1 ? registrationManagers[0]!.id : ""}
-          placeholder="בחרו מנהל רישום"
-          options={opts(registrationManagers)}
-        />
-        <SelectField
-          label='סמנכ"ל רישום'
-          name="vpId"
-          required
-          defaultValue={vps.length === 1 ? vps[0]!.id : ""}
-          placeholder='בחרו סמנכ"ל'
-          options={opts(vps)}
-        />
       </fieldset>
-      <CheckboxGroup legend="גורמים אקדמיים (אחד או יותר)" name="academicIds" options={opts(academics)} />
+      <p className="text-sm text-muted">
+        מנהל הרישום נקבע לפי הקמפוס והפקולטה, והסמנכ"ל קבוע. הגורם האקדמי נבחר בהמשך, אחרי סבב הרישום.
+      </p>
     </ActionForm>
   );
 }

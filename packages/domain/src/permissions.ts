@@ -5,6 +5,7 @@ import { hasApproved, roundOfSlot, stageIndex } from "./workflow";
 export type GlobalAction =
   | "MANAGE_USERS"
   | "MANAGE_SEASONS" // יצירת עונה, "צור על בסיס עונה קודמת"
+  | "MANAGE_UNITS" // מנהל רישום לכל קמפוס+פקולטה, ייבוא מסלולים
   | "SET_REMINDER_INTERVAL"
   | "CREATE_LETTER_REQUEST"
   | "VIEW_ALL_LETTERS"; // דשבורד מלא
@@ -41,6 +42,8 @@ export function canGlobal(actor: Actor, action: GlobalAction): boolean {
     case "MANAGE_SEASONS":
     case "VIEW_ALL_LETTERS":
       return has(actor, "ADMIN", "CONTROL_MANAGER", "VP_REGISTRATION");
+    case "MANAGE_UNITS":
+      return has(actor, "CONTROL_MANAGER", "VP_REGISTRATION");
     case "SET_REMINDER_INTERVAL":
       return has(actor, "CONTROL_MANAGER");
     case "CREATE_LETTER_REQUEST":
