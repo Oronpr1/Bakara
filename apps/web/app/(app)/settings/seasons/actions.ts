@@ -60,6 +60,17 @@ export async function createSeasonAction(_prev: ActionResult, form: FormData): P
   redirect(`/settings/tracks?opened=${createdId}`);
 }
 
+/** Only the reminder days (the small form some season screens show). */
+export async function setReminderDaysAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ seasonId: z.uuid(), days }),
+    formObject(form),
+    (actor, d) => updateSeason(actor, d.seasonId, { reminderIntervalDays: d.days }),
+    (d) => [...PATHS, `/seasons/${d.seasonId}`],
+    "נשמר",
+  );
+}
+
 export async function updateSeasonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
     z.object({ seasonId: z.uuid(), name, ...settings }),

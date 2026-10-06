@@ -154,6 +154,7 @@ export function TracksBoard({
   const [userId, setUserId] = useState("");
   const [asking, setAsking] = useState(false);
   const [bulk, dispatchBulk, bulkPending] = useActionState<BulkState, FormData>(bulkAction, null);
+  const [dismissed, setDismissed] = useState(0);
   const [removing, setRemoving] = useState<{ t: TrackAssignment; e: TrackAssignment["extras"][number] } | null>(null);
   const [removed, dispatchRemove, removePending] = useActionState<ActionResult, FormData>(removeAction, null);
 
@@ -443,7 +444,7 @@ export function TracksBoard({
       )}
 
       {/* The assignment bar: appears once tracks are chosen, and stays in view. */}
-      {(selected.size > 0 || bulk) && (
+      {(selected.size > 0 || (bulk && !(("at" in bulk) && bulk.at === dismissed))) && (
         <section
           aria-label="הקצאה למסלולים שנבחרו"
           className="sticky bottom-3 z-20 flex flex-col gap-3 rounded-xl border border-accent/50 bg-surface p-3 shadow-pop sm:p-4"
@@ -512,12 +513,19 @@ export function TracksBoard({
               {bulk.error}
             </p>
           )}
-          {!bulkPending && bulk && "ok" in bulk && (
+          {!bulkPending && bulk && "ok" in bulk && bulk.at !== dismissed && (
             <div role="status" className="flex flex-col gap-1.5 text-sm">
-              <p className="flex items-start gap-1.5 font-semibold text-good">
-                <CircleCheck aria-hidden className="mt-0.5 size-4" />
-                {bulk.message}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="flex items-start gap-1.5 font-semibold text-good">
+                  <CircleCheck aria-hidden className="mt-0.5 size-4" />
+                  {bulk.message}
+                </p>
+                {selected.size === 0 && (
+                  <button type="button" className={btnIcon} onClick={() => setDismissed(bulk.at)} aria-label="סגור את ההודעה">
+                    <X aria-hidden className="size-4" />
+                  </button>
+                )}
+              </div>
               {bulk.failed.length > 0 && (
                 <ul className="flex flex-col gap-1 rounded-md bg-bad-soft px-3 py-2 text-bad">
                   {bulk.failed.map((f, i) => (
