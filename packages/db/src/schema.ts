@@ -239,9 +239,10 @@ export const versions = pgTable(
     id: id(),
     letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
     number: integer("number").notNull(),
-    docxKey: text("docx_key").notNull(),
-    docxSha256: text("docx_sha256").notNull(),
-    docxSize: integer("docx_size").notNull(),
+    // The Word file is optional: the PDF is the official version, and the Word may stay with the advisor.
+    docxKey: text("docx_key"),
+    docxSha256: text("docx_sha256"),
+    docxSize: integer("docx_size"),
     pdfKey: text("pdf_key").notNull(),
     pdfSha256: text("pdf_sha256").notNull(),
     pdfSize: integer("pdf_size").notNull(),

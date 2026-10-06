@@ -162,7 +162,7 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     await expect(versionFromSharePoint(people.rm!, id, undefined)).rejects.toThrow(/הרשאה/);
     const v = await versionFromSharePoint(people.adv!, id, "תיקון שכר לימוד");
     expect(v).toMatchObject({ number: 2, pdfSource: "GRAPH", note: "תיקון שכר לימוד", pageCount: 1 });
-    expect(files.get(v.docxKey)).toEqual(docx("edited in Word"));
+    expect(files.get(v.docxKey!)).toEqual(docx("edited in Word"));
     expect((await liveFileStatus(await row(id)))!.changed).toBe(false);
     await expect(versionFromSharePoint(people.adv!, id, undefined)).rejects.toThrow(/אין שינויים/);
   });

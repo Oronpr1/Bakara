@@ -13,6 +13,7 @@ import { requireUser } from "@/lib/auth/session";
 import { userMessage } from "@/lib/errors";
 import { createComment, deleteDraftComment, replyToComment, setCommentStatus, updateDraftComment } from "@/lib/letters/comments";
 import { openInWord, versionFromSharePoint } from "@/lib/letters/live-file";
+import { textMatch } from "@/lib/letters/textmatch";
 import { listUsers } from "@/lib/letters/queries";
 import {
   addLetterPerson,
@@ -151,14 +152,15 @@ const file = (what: string) =>
 
 export async function uploadVersionAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({ letterId, docx: file("Word"), pdf: file("PDF"), note }),
+    z.object({ letterId, docx: file("Word").optional(), pdf: file("PDF"), note }),
     formObject(form),
-    async (actor, d) =>
-      uploadVersion(actor, d.letterId, {
-        docx: new Uint8Array(await d.docx.arrayBuffer()),
-        pdf: new Uint8Array(await d.pdf.arrayBuffer()),
-        note: d.note,
-      }),
+    async (actor, d) => {
+      const docx = d.docx ? new Uint8Array(await d.docx.arrayBuffer()) : null;
+      const pdf = new Uint8Array(await d.pdf.arrayBuffer());
+      // With a Word file attached: how much of its text is in the PDF (a PDF of another letter shows up as a low share).
+      const match = docx ? await textMatch(docx, pdf).catch(() => null) : null;
+      return uploadVersion(actor, d.letterId, { docx, pdf, note: d.note, textMatch: match });
+    },
     paths,
     "הגרסה הועלתה",
   );

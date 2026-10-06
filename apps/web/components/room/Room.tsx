@@ -164,11 +164,7 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
                 ) : undefined
               }
             >
-              {room.can.uploadVersion
-                ? room.starter
-                  ? "אפשר להתחיל מהמכתב של השנה שעברה: מורידים אותו בלשונית \"גרסאות\", עורכים ב-Word ומעלים."
-                  : "מעלים Word ו-PDF בלשונית \"גרסאות\", והמכתב יוצג כאן."
-                : `${shortName(room.advisorName)} עוד לא העלתה גרסה.`}
+              {room.can.uploadVersion ? "מעלים את ה-PDF של המכתב בלשונית \"גרסאות\", והוא יוצג כאן." : `${shortName(room.advisorName)} עוד לא העלתה גרסה.`}
             </EmptyState>
           )}
         </section>

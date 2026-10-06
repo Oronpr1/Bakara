@@ -105,7 +105,7 @@ export const STEP_LABELS: Record<Phase, string> = {
 
 /** What each blocker means and what to do about it, in plain words. */
 export const BLOCKER_HELP: Record<Blocker, { title: string; todo: string }> = {
-  NO_VERSION: { title: "עדיין לא הועלתה גרסה", todo: "מעלים Word ו-PDF בלשונית \"גרסאות\", ואז שולחים." },
+  NO_VERSION: { title: "עדיין לא הועלתה גרסה", todo: "מעלים את ה-PDF של המכתב בלשונית \"גרסאות\", ואז שולחים." },
   NO_REGISTRATION_MANAGER: {
     title: "לא הוגדר מנהל רישום למסלול",
     todo: "ורוניקה מגדירה אותו במסך \"קמפוסים ופקולטות\" (או מסמנת שביחידה רק הסמנכ\"ל בודק).",

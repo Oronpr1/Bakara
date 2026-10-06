@@ -270,14 +270,16 @@ function isPdf(bytes: Uint8Array) {
 }
 
 /**
- * A new official version: a frozen DOCX + PDF pair. Allowed to the advisor while she holds the
- * letter (preparing or fixing) and to the control manager at any time before approval.
+ * A new official version: the PDF the reviewers mark, with the Word file it came from when there
+ * is one (the add-in and "edit in Word" send both; a plain upload may be the PDF alone). Allowed to
+ * the advisor while she holds the letter (preparing or fixing) and to the control manager at any
+ * time before approval.
  */
 export async function uploadVersion(
   actor: Actor,
   letterId: string,
   input: {
-    docx: Uint8Array;
+    docx?: Uint8Array | null;
     pdf: Uint8Array;
     note?: string;
     pdfSource?: "UPLOAD" | "ADDIN" | "GRAPH";
@@ -287,8 +289,8 @@ export async function uploadVersion(
   db: Db = getDb(),
 ) {
   const { docx, pdf } = input;
-  if (docx.byteLength > MAX_FILE_BYTES || pdf.byteLength > MAX_FILE_BYTES) throw new AppError("INVALID", "הקובץ גדול מדי (עד 30MB)");
-  if (!isDocx(docx)) throw new AppError("INVALID", "קובץ ה-Word לא תקין. צריך קובץ DOCX");
+  if ((docx?.byteLength ?? 0) > MAX_FILE_BYTES || pdf.byteLength > MAX_FILE_BYTES) throw new AppError("INVALID", "הקובץ גדול מדי (עד 30MB)");
+  if (docx && !isDocx(docx)) throw new AppError("INVALID", "קובץ ה-Word לא תקין. צריך קובץ DOCX");
   if (!isPdf(pdf)) throw new AppError("INVALID", "קובץ ה-PDF לא תקין");
 
   let pageCount: number;
@@ -303,16 +305,16 @@ export async function uploadVersion(
     const number = l.row.latestVersion + 1;
     const base = `letters/${letterId}/v${number}-${Date.now()}`;
     const store = getFileStore();
-    await store.put(`${base}.docx`, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    if (docx) await store.put(`${base}.docx`, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     await store.put(`${base}.pdf`, pdf, "application/pdf");
     const [version] = await tx
       .insert(versions)
       .values({
         letterId,
         number,
-        docxKey: `${base}.docx`,
-        docxSha256: sha256(docx),
-        docxSize: docx.byteLength,
+        docxKey: docx ? `${base}.docx` : null,
+        docxSha256: docx ? sha256(docx) : null,
+        docxSize: docx ? docx.byteLength : null,
         pdfKey: `${base}.pdf`,
         pdfSha256: sha256(pdf),
         pdfSize: pdf.byteLength,

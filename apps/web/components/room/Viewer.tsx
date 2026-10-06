@@ -38,22 +38,25 @@ export interface ViewerProps {
 }
 
 export function Viewer(props: ViewerProps) {
+  // The size goes on a wrapper: the viewer's own stylesheet is not in a CSS layer and its
+  // "height: 100%" would beat Tailwind's size classes if they were put on the viewer itself.
   return (
-    <PdfReviewViewer
-      className={props.className}
-      src={props.src}
-      versionNumber={props.versionNumber}
-      comments={props.comments}
-      selectedCommentId={props.selectedId}
-      onSelectComment={props.onSelect}
-      onClearSelection={props.onClearSelection}
-      resolvedComments={props.showResolved ? "faint" : "hidden"}
-      canDraw={props.canDraw}
-      tool={props.tool}
-      onToolChange={props.onToolChange}
-      onCreate={props.onCreate}
-      onUpdateDraft={props.onUpdateDraft}
-      onDelete={props.onDelete}
-    />
+    <div className={props.className}>
+      <PdfReviewViewer
+        src={props.src}
+        versionNumber={props.versionNumber}
+        comments={props.comments}
+        selectedCommentId={props.selectedId}
+        onSelectComment={props.onSelect}
+        onClearSelection={props.onClearSelection}
+        resolvedComments={props.showResolved ? "faint" : "hidden"}
+        canDraw={props.canDraw}
+        tool={props.tool}
+        onToolChange={props.onToolChange}
+        onCreate={props.onCreate}
+        onUpdateDraft={props.onUpdateDraft}
+        onDelete={props.onDelete}
+      />
+    </div>
   );
 }

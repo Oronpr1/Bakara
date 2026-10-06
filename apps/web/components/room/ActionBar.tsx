@@ -186,17 +186,21 @@ export function ActionBar({
     sub =
       state === "LOADING"
         ? can.markInGilboa
-          ? "מורידים את קובץ ה-Word, בונים את המכתב בגלבוע, ומסמנים כאן כשהוא עלה."
+          ? latest?.hasDocx
+            ? "מורידים את קובץ ה-Word, בונים את המכתב בגלבוע, ומסמנים כאן כשהוא עלה."
+            : "בונים את המכתב בגלבוע מקובץ ה-Word שאצלך, ומסמנים כאן כשהוא עלה."
           : `ממתין להעלאה לגלבוע אצל ${advisor}.`
         : null;
     buttons = (
       <>
         {latest && (
           <>
-            <a href={`/api/versions/${latest.id}/docx`} className={btnSecondary}>
-              <FileDown aria-hidden className="size-4" />
-              הורד Word
-            </a>
+            {latest.hasDocx && (
+              <a href={`/api/versions/${latest.id}/docx`} className={btnSecondary}>
+                <FileDown aria-hidden className="size-4" />
+                הורד Word
+              </a>
+            )}
             <a href={`/api/versions/${latest.id}/pdf`} className={btnSecondary} target="_blank" rel="noopener">
               <FileText aria-hidden className="size-4" />
               הורד PDF

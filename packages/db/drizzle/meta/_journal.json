@@ -64,6 +64,13 @@
       "when": 1791325261491,
       "tag": "0008_annotations",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791327806237,
+      "tag": "0009_pdf_only_versions",
+      "breakpoints": true
     }
   ]
 }

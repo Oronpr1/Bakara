@@ -125,7 +125,7 @@ export const RULE_GROUPS: readonly RuleGroup[] = [
         { CONTROL_MANAGER: Y, VP_REGISTRATION: Y, CONTROL_ADVISOR: Y, REGISTRATION_MANAGER: Y },
         { global: "CREATE_LETTER_REQUEST" },
       ),
-      row("upload", "להעלות גרסה (Word ו-PDF)", "access.ts abilities.uploadVersion", {
+      row("upload", "להעלות גרסה (PDF, ואפשר גם Word)", "access.ts abilities.uploadVersion", {
         CONTROL_MANAGER: P("בכל עת, עד שהמכתב מאושר"),
         CONTROL_ADVISOR: P("כשהמכתב אצלה: בהכנה או בתיקון"),
       }),

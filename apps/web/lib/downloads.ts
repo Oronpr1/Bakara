@@ -51,7 +51,9 @@ export async function serveVersionFile(rawId: string, kind: "docx" | "pdf"): Pro
     const [version] = await getDb().select().from(schema.versions).where(eq(schema.versions.id, rawId));
     if (!version) throw new AppError("NOT_FOUND", "");
     const letter = await letterForFile(actorOf(user), version.letterId);
-    const bytes = await getFileStore().get(kind === "docx" ? version.docxKey : version.pdfKey);
+    const key = kind === "docx" ? version.docxKey : version.pdfKey;
+    if (!key) throw new AppError("NOT_FOUND", ""); // a version uploaded as a PDF alone has no Word file
+    const bytes = await getFileStore().get(key);
     return fileResponse(bytes, kind, versionFilename(letter, version.number, kind), kind === "pdf");
   });
 }

@@ -293,6 +293,8 @@ export interface RoomVersion {
   createdByName: string;
   createdAt: Date;
   pageCount: number;
+  /** A Word file came with this version (a PDF alone is allowed). */
+  hasDocx: boolean;
   textMatch: number | null;
   pdfSource: string;
 }
@@ -454,6 +456,7 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
       createdByName: nameOf(v.createdBy) ?? "—",
       createdAt: v.createdAt,
       pageCount: v.pageCount,
+      hasDocx: Boolean(v.docxKey),
       textMatch: v.textMatch,
       pdfSource: v.pdfSource,
     })),

@@ -63,7 +63,8 @@ export async function openInWord(actor: Actor, letterId: string, opts: Opts = {}
         .from(versions)
         .where(and(eq(versions.letterId, letterId), eq(versions.number, row.latestVersion)))
     : [];
-  const docx = latest ? await getFileStore().get(latest.docxKey) : emptyLetterDocx();
+  // The latest version may be a PDF alone; then the working file starts from the empty letter.
+  const docx = latest?.docxKey ? await getFileStore().get(latest.docxKey) : emptyLetterDocx();
 
   // A file already at the letter's path comes from an earlier attempt that did not finish
   // (or a second click racing this one); link it rather than fail. Its content is unknown,

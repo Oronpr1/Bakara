@@ -207,7 +207,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     expect(await res.json()).toMatchObject({ versionNumber: 1, stage: "DRAFT", submitted: false, pageCount: 2 });
     const [v] = await getDb().select().from(schema.versions).where(eq(schema.versions.letterId, letterId));
     expect(v).toMatchObject({ number: 1, pdfSource: "ADDIN", note: "תיקון שנת לימודים", docxSha256: sha256(docx) });
-    expect(files.get(v!.docxKey)).toEqual(docx);
+    expect(files.get(v!.docxKey!)).toEqual(docx);
     const [l] = await getDb().select().from(schema.letterRequests).where(eq(schema.letterRequests.id, letterId));
     expect(l!.sharepointVersionCTag).toBe(`"c:{item-${tag}},7"`);
   });

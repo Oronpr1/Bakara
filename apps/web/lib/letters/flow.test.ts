@@ -362,6 +362,23 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     expect(room.comments.map((c) => c.kind)).toEqual(["LINE"]);
   });
 
+  it("a version may be a PDF alone: it is stored, shown, sent to review, and has no Word file", async () => {
+    const l = await createLetterRequest(ppl.cm!, { seasonId, campus: camp, faculty: "משפטים", trackName: "מסלול PDF בלבד", trackNumber: "227099" });
+    const v = await uploadVersion(ppl.adv!, l.id, { pdf: await pdf(2), note: "רק PDF" });
+    expect(v.docxKey).toBeNull();
+    expect(v.pdfKey).toBeTruthy();
+    expect(v.pageCount).toBe(2);
+    await submitLetter(ppl.adv!, l.id);
+    const room = await getLetterRoom(ppl.cm!, l.id);
+    expect(room.versions[0]).toMatchObject({ number: 1, hasDocx: false });
+    // A Word file may come with a later version; then it is there to download.
+    const v2 = await uploadVersion(ppl.cm!, l.id, { docx, pdf: await pdf(2) });
+    expect(v2.docxKey).toBeTruthy();
+    expect((await getLetterRoom(ppl.cm!, l.id)).versions[0]).toMatchObject({ number: 2, hasDocx: true });
+    // A file that is not a Word document is still refused when one is attached.
+    await expect(uploadVersion(ppl.cm!, l.id, { docx: new Uint8Array([1, 2, 3]), pdf: await pdf(1) })).rejects.toThrow();
+  });
+
   it("a reminder reaches whoever holds the letter; only the control manager and the VP can send it", async () => {
     const id = await makeLetter("5");
     await expect(remindHolders(ppl.adv!, id)).rejects.toThrow();
