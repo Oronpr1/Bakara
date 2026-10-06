@@ -7,11 +7,12 @@ import { Spinner } from "@/components/Spinner";
 import { btnPrimary, btnSecondary, card, input } from "@/components/ui";
 import { importTracksAction, type ImportState } from "./actions";
 
-const STATUS_LABEL = { OK: "מוכן לייבוא", CREATED: "נוצר", EXISTS: "כבר קיים", ERROR: "לא ניתן לייבא" } as const;
+const STATUS_LABEL = { OK: "מוכן לייבוא", CREATED: "נוצר", EXISTS: "כבר קיים", ERROR: "לא ניתן לייבא", SKIPPED: "דולג" } as const;
 const STATUS_STYLE = {
   OK: "text-accent",
   CREATED: "text-good",
   EXISTS: "text-muted",
+  SKIPPED: "text-muted",
   ERROR: "text-bad",
 } as const;
 
@@ -27,7 +28,7 @@ export function ImportForm({ seasonId, seasonName }: { seasonId: string; seasonN
           <input name="file" type="file" required accept=".xlsx,.csv,.txt" className={input} />
         </label>
         <p className="text-sm text-muted">
-          עמודות בשורת הכותרת: שם מסלול, מספר מסלול, פקולטה, קמפוס, יועץ בקרה (שם או מייל). המסלולים ייווצרו בעונה {seasonName}.
+          עמודות בשורת הכותרת: קמפוס, פקולטה, מסלול, קוד מסלול. עמודת "יועץ בקרה" (שם או מייל) לא חובה: בלעדיה כל מסלול מקבל את היועצת שהוגדרה לקמפוס או לפקולטה שלו. עמודות נוספות מתעלמים מהן. המסלולים ייווצרו בעונה {seasonName}.
         </p>
         <div className="flex flex-wrap gap-2">
           <button name="intent" value="preview" className={btnSecondary} disabled={pending}>
@@ -63,11 +64,12 @@ export function ImportForm({ seasonId, seasonName }: { seasonId: string; seasonN
               <span className="font-semibold text-accent">{report.counts.ok} מוכנים לייבוא</span>
             )}
             <span className="text-muted">{report.counts.exists} כבר קיימים</span>
+            {report.counts.skipped > 0 && <span className="text-muted">{report.counts.skipped} דולגו (שורות מקום)</span>}
             <span className={report.counts.error ? "font-semibold text-bad" : "text-muted"}>{report.counts.error} בעיות</span>
           </p>
           {report.unitsWithoutManager.length > 0 && (
             <p className="rounded-md bg-warn-soft px-3 py-2 text-sm">
-              חסר מנהל רישום ל: {report.unitsWithoutManager.map((u) => `${u.faculty} (${u.campus})`).join(", ")}.{" "}
+              חסר מנהל רישום או יועצת בקרה ל: {report.unitsWithoutManager.map((u) => `${u.faculty} (${u.campus})`).join(", ")}.{" "}
               <Link href="/admin/units" className="font-semibold text-accent underline">
                 להגדרה
               </Link>{" "}

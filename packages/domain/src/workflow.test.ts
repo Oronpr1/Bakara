@@ -218,6 +218,7 @@ describe("permissions", () => {
     expect(canOnLetter(cm, "INITIAL_APPROVE", letter({ stage: "INITIAL_REVIEW" }))).toBe(true);
     expect(canOnLetter(vp, "INITIAL_APPROVE", letter({ stage: "INITIAL_REVIEW" }))).toBe(false);
     expect(canOnLetter(cm, "FINAL_APPROVE", letter({ stage: "FINAL_REVIEW" }))).toBe(true);
+    expect(canOnLetter(vp, "FINAL_APPROVE", letter({ stage: "FINAL_REVIEW" }))).toBe(true);
     expect(canOnLetter(advisor, "FINAL_APPROVE", letter({ stage: "FINAL_REVIEW" }))).toBe(false);
   });
 

@@ -74,6 +74,18 @@ export const seasons = pgTable("seasons", {
 });
 
 /**
+ * A campus. Its registration manager and advisor are the default for every faculty in it
+ * that does not have its own (e.g. Haifa: one registration manager for all faculties).
+ */
+export const campuses = pgTable("campuses", {
+  id: id(),
+  name: text("name").notNull().unique(),
+  registrationManagerId: uuid("registration_manager_id").references(() => users.id),
+  advisorId: uuid("advisor_id").references(() => users.id),
+  createdAt: createdAt(),
+});
+
+/**
  * A campus + faculty: its own workspace. The registration manager is set once here and is the
  * registration manager of every track in it, in every season.
  */
@@ -84,6 +96,8 @@ export const units = pgTable(
     campus: text("campus").notNull(),
     faculty: text("faculty").notNull(),
     registrationManagerId: uuid("registration_manager_id").references(() => users.id),
+    /** The control advisor who prepares the letters of this campus + faculty by default. */
+    advisorId: uuid("advisor_id").references(() => users.id),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("units_campus_faculty_uq").on(t.campus, t.faculty)],

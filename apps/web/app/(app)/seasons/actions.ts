@@ -17,6 +17,8 @@ const seasonSchema = z.object({
   name: z.string({ message: "צריך לתת שם לעונה" }).trim().min(1, { message: "צריך לתת שם לעונה" }).max(100),
   copyFromSeasonId: z.uuid().optional(),
   reminderIntervalDays: days.optional(),
+  codeFrom: z.string().trim().regex(/^\d{1,6}$/, { message: "הקוד הישן צריך להיות ספרות" }).optional(),
+  codeTo: z.string().trim().regex(/^\d{1,6}$/, { message: "הקוד החדש צריך להיות ספרות" }).optional(),
 });
 
 export async function createSeasonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {

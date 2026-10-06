@@ -7,7 +7,7 @@ export interface TrackRow {
   trackNumber: string;
   faculty: string;
   campus: string;
-  advisor: string; // name or email, as written in the file
+  advisor: string; // name or email as written in the file; empty = the advisor set for the campus + faculty
 }
 
 export type Column = "trackName" | "trackNumber" | "faculty" | "campus" | "advisor";
@@ -29,7 +29,7 @@ const clean = (v: unknown) =>
 const norm = (v: unknown) => clean(v).toLowerCase().replace(/["'׳״.]/g, "");
 
 /** Finds which column holds what, from the header row. Null when a needed column is missing. */
-export function mapColumns(header: unknown[]): Record<Column, number> | { missing: Column[] } {
+export function mapColumns(header: unknown[]): Record<Column, number | undefined> | { missing: Column[] } {
   const map: Partial<Record<Column, number>> = {};
   const cells = header.map(norm);
   for (const col of Object.keys(HEADERS) as Column[]) {
@@ -37,8 +37,9 @@ export function mapColumns(header: unknown[]): Record<Column, number> | { missin
     const i = cells.findIndex((c) => names.includes(c));
     if (i >= 0) map[col] = i;
   }
-  const missing = (Object.keys(HEADERS) as Column[]).filter((c) => map[c] === undefined);
-  return missing.length ? { missing } : (map as Record<Column, number>);
+  // The advisor column is optional: without it every row gets the advisor set for its campus + faculty.
+  const missing = (Object.keys(HEADERS) as Column[]).filter((c) => c !== "advisor" && map[c] === undefined);
+  return missing.length ? { missing } : (map as Record<Column, number | undefined>);
 }
 
 export const COLUMN_LABELS: Record<Column, string> = {
@@ -57,16 +58,17 @@ export function parseTrackRows(rows: unknown[][]): { rows: TrackRow[] } | { erro
   if ("missing" in cols)
     return { error: `חסרות עמודות בשורת הכותרת: ${cols.missing.map((c) => COLUMN_LABELS[c]).join(", ")}` };
   const out: TrackRow[] = [];
+  const at = (r: unknown[], col: number | undefined) => (col === undefined ? "" : clean(r[col]));
   body.forEach((r, i) => {
     const row: TrackRow = {
       line: i + 2,
-      trackName: clean(r[cols.trackName]),
-      trackNumber: clean(r[cols.trackNumber]),
-      faculty: clean(r[cols.faculty]),
-      campus: clean(r[cols.campus]),
-      advisor: clean(r[cols.advisor]),
+      trackName: at(r, cols.trackName),
+      trackNumber: at(r, cols.trackNumber),
+      faculty: at(r, cols.faculty),
+      campus: at(r, cols.campus),
+      advisor: at(r, cols.advisor),
     };
-    if (Object.values({ ...row, line: "" }).every((v) => !v)) return;
+    if ([row.trackName, row.trackNumber, row.faculty, row.campus, row.advisor].every((v) => !v)) return;
     out.push(row);
   });
   if (out.length === 0) return { error: "לא נמצאו שורות מתחת לכותרת" };

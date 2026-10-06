@@ -22,10 +22,11 @@ import { PDFDocument } from "pdf-lib";
 import { AppError, forbidden } from "../errors";
 import { audit, notify } from "../notify";
 import { getFileStore, sha256 } from "../storage";
+import { ensureUnit, resolveDefaults } from "../units/resolve";
 import { syncLiveFileLock } from "./live-file-lock";
 import { loadLetter, type LetterRow, type Tx } from "./state";
 
-const { users, seasons, letterRequests, approverAssignments, approvals, versions, units } = schema;
+const { users, seasons, letterRequests, approverAssignments, approvals, versions } = schema;
 
 function ensure(actor: Actor, action: LetterAction, state: LetterState) {
   if (!canOnLetter(actor, action, state)) throw forbidden();
@@ -77,6 +78,17 @@ async function setStage(tx: Tx, row: LetterRow, state: LetterState, stage: Stage
       break;
     case "REGISTRATION_ROUND":
     case "ACADEMIC_ROUND": {
+      if (settled === "ACADEMIC_ROUND" && activeApprovers(after, ["ACADEMIC"]).length === 0) {
+        // Nobody to ask yet: tell the people of the letter's workspace to choose an academic approver.
+        await notify(
+          tx,
+          [row.advisorId, ...activeApprovers(after).map((a) => a.userId), ...(await usersWithRole(tx, "CONTROL_MANAGER"))],
+          "CHOOSE_ACADEMIC",
+          row.id,
+          actorId,
+        );
+        break;
+      }
       const waiting = activeApprovers(after).filter(
         (a) => roundOfSlot(a.slot) === settled && !hasApproved(after, a.userId, a.slot),
       );
@@ -84,7 +96,13 @@ async function setStage(tx: Tx, row: LetterRow, state: LetterState, stage: Stage
       break;
     }
     case "FINAL_REVIEW":
-      await notify(tx, await usersWithRole(tx, "CONTROL_MANAGER"), "READY_FOR_FINAL", row.id, actorId);
+      await notify(
+        tx,
+        [...(await usersWithRole(tx, "CONTROL_MANAGER")), ...(await usersWithRole(tx, "VP_REGISTRATION"))],
+        "READY_FOR_FINAL",
+        row.id,
+        actorId,
+      );
       break;
     case "APPROVED":
       await notify(
@@ -109,7 +127,7 @@ export async function settleLetter(tx: Tx, letterId: string, actorId: string) {
 
 export async function createSeason(
   actor: Actor,
-  input: { name: string; copyFromSeasonId?: string; reminderIntervalDays?: number },
+  input: { name: string; copyFromSeasonId?: string; reminderIntervalDays?: number; codeFrom?: string; codeTo?: string },
   db: Db = getDb(),
 ) {
   if (!canGlobal(actor, "MANAGE_SEASONS")) throw forbidden();
@@ -129,9 +147,29 @@ export async function createSeason(
     await audit(tx, actor.userId, "SEASON_CREATED", { seasonId: season!.id }, { name, copyFrom: input.copyFromSeasonId });
 
     if (input.copyFromSeasonId) {
-      // "צור על בסיס עונה קודמת": same tracks and assignments, no versions, comments or approvals.
+      // "צור על בסיס עונה קודמת": the same tracks, with no versions, comments or approvals. A year
+      // changes the start of every track code (227… becomes 228…). The people are the ones
+      // responsible now: the campus + faculty's registration manager and advisor, and the VP.
+      const { codeFrom, codeTo } = input;
+      const renumber = (n: string) => (codeFrom && codeTo !== undefined && n.startsWith(codeFrom) ? codeTo + n.slice(codeFrom.length) : n);
       const source = await tx.select().from(letterRequests).where(eq(letterRequests.seasonId, input.copyFromSeasonId));
+      const vps = await usersWithRole(tx, "VP_REGISTRATION");
+      const active = new Map((await tx.select().from(users).where(eq(users.active, true))).map((u) => [u.id, u]));
       for (const l of source) {
+        const defaults = await resolveDefaults(tx, l.campus, l.faculty);
+        const previous = await tx
+          .select()
+          .from(approverAssignments)
+          .where(
+            and(
+              eq(approverAssignments.letterId, l.id),
+              eq(approverAssignments.slot, "REGISTRATION_MANAGER"),
+              isNull(approverAssignments.removedAt),
+            ),
+          );
+        const advisorId = active.get(l.advisorId)?.roles.includes("CONTROL_ADVISOR") ? l.advisorId : defaults.advisorId;
+        const managerId = defaults.registrationManagerId ?? previous[0]?.userId ?? null;
+        if (!advisorId) continue;
         const [copy] = await tx
           .insert(letterRequests)
           .values({
@@ -139,19 +177,19 @@ export async function createSeason(
             campus: l.campus,
             faculty: l.faculty,
             trackName: l.trackName,
-            trackNumber: l.trackNumber,
-            advisorId: l.advisorId,
+            trackNumber: renumber(l.trackNumber),
+            advisorId,
             createdBy: actor.userId,
           })
+          .onConflictDoNothing()
           .returning({ id: letterRequests.id });
-        const assigned = await tx
-          .select()
-          .from(approverAssignments)
-          .where(and(eq(approverAssignments.letterId, l.id), isNull(approverAssignments.removedAt)));
-        if (assigned.length)
-          await tx.insert(approverAssignments).values(
-            assigned.map((a) => ({ letterId: copy!.id, userId: a.userId, slot: a.slot, assignedBy: actor.userId })),
-          );
+        if (!copy) continue;
+        const slots: { userId: string; slot: ApproverSlot }[] = [
+          ...(managerId ? [{ userId: managerId, slot: "REGISTRATION_MANAGER" as const }] : []),
+          ...vps.map((userId) => ({ userId, slot: "VP_REGISTRATION" as const })),
+        ];
+        if (slots.length)
+          await tx.insert(approverAssignments).values(slots.map((x) => ({ letterId: copy.id, ...x, assignedBy: actor.userId })));
       }
     }
     return season!;
@@ -175,8 +213,9 @@ export interface LetterRequestInput {
   faculty: string;
   trackName: string;
   trackNumber: string;
-  advisorId: string;
-  /** Default: the registration manager of the campus + faculty (set once in "יחידות"). */
+  /** Default: the advisor of the campus + faculty (set once in "קמפוסים ופקולטות"). */
+  advisorId?: string;
+  /** Default: the registration manager of the campus + faculty (set once in "קמפוסים ופקולטות"). */
   registrationManagerId?: string;
   /** Default: the VP of registration (every active user holding the role). */
   vpId?: string;
@@ -194,18 +233,21 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
   const [campus, faculty, trackName, trackNumber] = text as [string, string, string, string];
   // Registered even when this attempt is refused below, so the campus + faculty shows up in the
   // screen where its registration manager is set.
-  await db.insert(units).values({ campus, faculty }).onConflictDoNothing();
+  await ensureUnit(db, campus, faculty);
 
   return db.transaction(async (tx) => {
     const academicIds = [...new Set(input.academicIds ?? [])];
-    await assertRole(tx, [input.advisorId], "CONTROL_ADVISOR");
+    const defaults = await resolveDefaults(tx, campus, faculty);
+    const advisorId = input.advisorId ?? defaults.advisorId;
+    if (!advisorId)
+      throw new AppError("INVALID", `לא הוגדרה יועצת בקרה ל${faculty} ב${campus}. מגדירים אותה פעם אחת במסך "קמפוסים ופקולטות".`);
+    await assertRole(tx, [advisorId], "CONTROL_ADVISOR");
     await assertRole(tx, academicIds, "ACADEMIC_APPROVER");
 
     // The campus + faculty is a workspace of its own; its registration manager is set once.
-    const [unit] = await tx.select().from(units).where(and(eq(units.campus, campus), eq(units.faculty, faculty)));
-    const registrationManagerId = input.registrationManagerId ?? unit?.registrationManagerId ?? null;
+    const registrationManagerId = input.registrationManagerId ?? defaults.registrationManagerId;
     if (!registrationManagerId)
-      throw new AppError("INVALID", `לא הוגדר מנהל רישום ל${faculty} ב${campus}. מגדירים אותו פעם אחת במסך "קמפוסים ופקולטות".`);
+      throw new AppError("INVALID", `לא הוגדר מנהל רישום ל${faculty} ב${campus}. מגדירים אותו פעם אחת במסך "קמפוסים ופקולטות" (לקמפוס כולו או לפקולטה).`);
     await assertRole(tx, [registrationManagerId], "REGISTRATION_MANAGER");
     const vpIds = input.vpId ? [input.vpId] : await usersWithRole(tx, "VP_REGISTRATION");
     if (vpIds.length === 0) throw new AppError("INVALID", 'לא הוגדר סמנכ"ל רישום. מוסיפים משתמש עם התפקיד במסך "משתמשים".');
@@ -219,7 +261,7 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
         faculty,
         trackName,
         trackNumber,
-        advisorId: input.advisorId,
+        advisorId,
         dueDate: input.dueDate || null,
         createdBy: actor.userId,
       })

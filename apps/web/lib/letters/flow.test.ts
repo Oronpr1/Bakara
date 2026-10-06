@@ -141,8 +141,13 @@ describe.skipIf(!process.env.DATABASE_URL)("a letter from upload to approved for
     expect(files.size).toBe(4); // two frozen DOCX + PDF pairs
   });
 
-  it("copies tracks and assignments into a new season, without versions", async () => {
-    const copy = await createSeason(people.cm!, { name: `תשפ"ח א' ${tag}`, copyFromSeasonId: seasonId });
+  it("copies tracks into a new season (new code year, current people), without versions", async () => {
+    const copy = await createSeason(people.cm!, {
+      name: `תשפ"ח א' ${tag}`,
+      copyFromSeasonId: seasonId,
+      codeFrom: "10",
+      codeTo: "20",
+    });
     const letters = await getDb()
       .select()
       .from(schema.letterRequests)
@@ -150,11 +155,16 @@ describe.skipIf(!process.env.DATABASE_URL)("a letter from upload to approved for
     expect(letters).toHaveLength(1);
     expect(letters[0]!.stage).toBe("DRAFT");
     expect(letters[0]!.latestVersion).toBe(0);
+    expect(letters[0]!.trackNumber).toBe("201"); // 101 -> 201
     const assigned = await getDb()
       .select()
       .from(schema.approverAssignments)
       .where(eq(schema.approverAssignments.letterId, letters[0]!.id));
-    expect(assigned.map((a) => a.slot).sort()).toEqual(["ACADEMIC", "REGISTRATION_MANAGER", "VP_REGISTRATION"]);
+    // The academic approver is chosen again each season; the registration manager carries over here
+    // because no campus or faculty default is set for this test's campus.
+    expect(new Set(assigned.map((a) => a.slot))).toEqual(new Set(["REGISTRATION_MANAGER", "VP_REGISTRATION"]));
+    expect(assigned.find((a) => a.slot === "REGISTRATION_MANAGER")?.userId).toBe(people.rm!.userId);
+    expect(assigned.some((a) => a.slot === "VP_REGISTRATION" && a.userId === people.vp!.userId)).toBe(true);
     await getDb().delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, copy.id));
   });
 });

@@ -6,6 +6,7 @@ export type NotificationType =
   | "RETURNED_FOR_CHANGES" // הוחזר לתיקון
   | "AWAITING_YOUR_APPROVAL" // המכתב ממתין לאישורך
   | "READY_FOR_FINAL" // ממתין לאישור סופי
+  | "CHOOSE_ACADEMIC" // סבב הרישום הסתיים: צריך לבחור גורם אקדמי
   | "APPROVED_FOR_DISTRIBUTION"
   | "NEW_VERSION" // הועלתה גרסה חדשה
   | "NEW_COMMENT"

@@ -13,6 +13,7 @@ const LINES: Record<NotificationType, (d: Record<string, unknown>) => string> = 
   RETURNED_FOR_CHANGES: () => "המכתב הוחזר לתיקון",
   AWAITING_YOUR_APPROVAL: () => "המכתב ממתין לאישורך",
   READY_FOR_FINAL: () => "המכתב ממתין לאישור סופי",
+  CHOOSE_ACADEMIC: () => "סבב הרישום הסתיים: צריך לבחור גורם אקדמי למכתב",
   APPROVED_FOR_DISTRIBUTION: () => "המכתב מאושר להפצה",
   NEW_VERSION: (d) => `הועלתה גרסה חדשה${typeof d.number === "number" ? ` (גרסה ${d.number})` : ""}`,
   NEW_COMMENT: () => "נוספה הערה חדשה",
