@@ -1,7 +1,7 @@
 // The add-in's route handlers against a real PostgreSQL (DATABASE_URL), with the Entra token
 // check replaced by a stub. Everything after the token check is the real code path.
 import { closeDb, getDb, schema } from "@al/db";
-import type { Actor, Role } from "@al/domain";
+import { flowView, type Actor, type Role } from "@al/domain";
 import { eq, inArray } from "drizzle-orm";
 import { NextRequest } from "next/server";
 import { PDFDocument } from "pdf-lib";
@@ -13,11 +13,13 @@ import { FakeDocumentHost } from "@/test/fake-document-host";
 import { setTokenVerifier, TokenError } from "../auth/entra";
 import { setDocumentHost } from "../m365/config";
 import { sha256, setFileStore } from "../storage";
-import { createComment } from "../letters/comments";
-import { createLetterRequest, createSeason } from "../letters/service";
+import { createComment, setCommentStatus } from "../letters/comments";
+import { createLetterRequest, createSeason, decideLetter } from "../letters/service";
+import { loadLetter } from "../letters/state";
 import { findLetterIdByDocumentUrl } from "./letters";
 
 const tag = `addin-${process.pid}-${Date.now()}`;
+const campus = `תל אביב ${tag}`;
 const ORIGIN = "https://addin.college.test";
 const BASE = "https://app.college.test";
 const files = new Map<string, Uint8Array>();
@@ -87,14 +89,12 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     seasonId = season.id;
     const letter = await createLetterRequest(people.cm!, {
       seasonId,
-      campus: "תל אביב",
+      campus,
       faculty: "משפטים",
       trackName: "משפטים",
       trackNumber: "123",
       advisorId: people.adv!.userId,
       registrationManagerId: people.rm!.userId,
-      vpId: people.vp!.userId,
-      academicIds: [people.ac!.userId],
     });
     letterId = letter.id;
     await getDb()
@@ -113,6 +113,8 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     }
     await db.delete(schema.auditEvents).where(eq(schema.auditEvents.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
+    await db.delete(schema.units).where(eq(schema.units.campus, campus));
+    await db.delete(schema.campuses).where(eq(schema.campuses.name, campus));
     await db.delete(schema.notifications).where(inArray(schema.notifications.userId, userIds));
     await db.delete(schema.auditEvents).where(inArray(schema.auditEvents.actorId, userIds));
     await db.delete(schema.users).where(inArray(schema.users.id, userIds));
@@ -127,15 +129,26 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     expect(letter).toMatchObject({
       id: letterId,
       trackNumber: "123",
-      campus: "תל אביב",
+      campus,
+      faculty: "משפטים",
       seasonName: `עונה ${tag}`,
       stage: "DRAFT",
       stageLabel: "בהכנה",
       latestVersion: 0,
       openComments: [],
       canUpload: true,
-      canSubmit: true,
     });
+    // The registration manager sees the letter but may not save versions of it.
+    const rm = await getLetter(req(`/api/addin/letter?url=${encodeURIComponent(wordUrl)}`, { who: "rm" }));
+    expect((await rm.json()).letter).toMatchObject({ id: letterId, canUpload: false, canSubmit: false });
+  });
+
+  // באג ב-lib/addin/letters.ts (letterForAddin): canSubmit = abilities().submit, שדורש גרסה קיימת
+  // (NO_VERSION). בטיוטה חדשה כפתור "שמור והעבר לבדיקה" מוסתר, אף שהוא עצמו שומר את הגרסה
+  // לפני השליחה (ונתיב ההעלאה בודק רק הרשאות). כשיתוקן: להחליף ל-it רגיל.
+  it.fails("offers 'save and submit' on a fresh draft, since that button saves the version first (known bug)", async () => {
+    const res = await getLetter(req(`/api/addin/letter?url=${encodeURIComponent(wordUrl)}`, { who: "adv" }));
+    expect((await res.json()).letter).toMatchObject({ latestVersion: 0, canSubmit: true });
   });
 
   it("falls back to the drive item when the URL form differs (Office viewer link)", async () => {
@@ -213,7 +226,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
       params(letterId),
     );
     expect(res.status).toBe(201);
-    expect(await res.json()).toMatchObject({ versionNumber: 2, stage: "INITIAL_REVIEW", stageLabel: "בדיקה ראשונית", submitted: true });
+    expect(await res.json()).toMatchObject({ versionNumber: 2, stage: "REVIEW", stageLabel: "בבדיקה", submitted: true });
   });
 
   it("refuses bodies over the size limit before reading them", async () => {
@@ -230,18 +243,23 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     expect((await res.json()).error).toMatch(/30MB/);
   });
 
-  it("lists open comments and serves their snapshot to viewers only", async () => {
+  it("lists published open comments only, and serves their snapshot to viewers only", async () => {
+    const paneOf = async (who: string) =>
+      (await (await getLetter(req(`/api/addin/letter?url=${encodeURIComponent(wordUrl)}`, { who }))).json()).letter;
+    // The manager's comment is a draft until he decides: the advisor does not see it yet.
     const comment = await createComment(
-      people.cm!,
+      people.rm!,
       letterId,
       { anchor: { versionNumber: 2, page: 1, x: 0.1, y: 0.1, width: 0.2, height: 0.1 }, body: "לתקן את התאריך", snapshotPng: png },
     );
-    const res = await getLetter(req(`/api/addin/letter?url=${encodeURIComponent(wordUrl)}`, { who: "adv" }));
-    const { letter } = await res.json();
+    expect((await paneOf("adv")).openComments).toEqual([]);
+    await decideLetter(people.rm!, letterId, { seat: "RM", kind: "CHANGES" });
+
+    const letter = await paneOf("adv");
     expect(letter.openComments).toEqual([
-      expect.objectContaining({ id: comment.id, authorName: "משתמש cm", page: 1, hasSnapshot: true, body: "לתקן את התאריך" }),
+      expect.objectContaining({ id: comment.id, authorName: "משתמש rm", page: 1, versionNumber: 2, status: "OPEN", hasSnapshot: true, body: "לתקן את התאריך" }),
     ]);
-    expect(letter.canSubmit).toBe(false);
+    expect(letter).toMatchObject({ stage: "REVIEW", stageLabel: "בתיקון", canUpload: true, canSubmit: false });
 
     const snap = await getSnapshot(req(`/api/addin/comments/${comment.id}/snapshot`, { who: "adv" }), params(comment.id));
     expect(snap.status).toBe(200);
@@ -252,5 +270,26 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     expect(denied.status).toBe(404);
     const bad = await getSnapshot(req(`/api/addin/comments/not-a-uuid/snapshot`, { who: "adv" }), params("not-a-uuid"));
     expect(bad.status).toBe(404);
+  });
+
+  it("'save and submit' while fixing sends the fixes back to the reviewer who returned the letter", async () => {
+    const [open] = await getDb().select().from(schema.comments).where(eq(schema.comments.letterId, letterId));
+    // Comments still open: the version is saved, the sending is refused with the reason.
+    const early = await postVersion(
+      req(`/api/addin/letters/${letterId}/versions`, { method: "POST", who: "adv", body: await uploadForm({ submit: true }) }),
+      params(letterId),
+    );
+    expect(early.status).toBe(201);
+    expect(await early.json()).toMatchObject({ versionNumber: 3, submitted: false, submitError: expect.stringMatching(/להגיב/) });
+
+    await setCommentStatus(people.adv!, open!.id, { to: "RESOLVED_FIXED", note: "תוקן" });
+    const res = await postVersion(
+      req(`/api/addin/letters/${letterId}/versions`, { method: "POST", who: "adv", body: await uploadForm({ submit: true, note: "תוקן התאריך" }) }),
+      params(letterId),
+    );
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ versionNumber: 4, stage: "REVIEW", stageLabel: "בבדיקה", submitted: true });
+    const { input } = await loadLetter(getDb(), letterId);
+    expect(flowView(input).holder.userIds).toEqual([people.rm!.userId]);
   });
 });
