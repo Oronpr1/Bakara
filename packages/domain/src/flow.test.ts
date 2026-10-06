@@ -39,7 +39,7 @@ function letter(over: Partial<FlowInput> = {}): FlowInput {
     phase: "REVIEW",
     latestVersion: 1,
     settings: { sequential: true, controlReview: false },
-    people: { advisorId: "shaked", rmIds: ["oron"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] },
+    people: { advisorId: "shaked", extraAdvisorIds: [], rmIds: ["oron"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] },
     academics: [],
     decisions: [],
     openComments: 0,
@@ -234,7 +234,7 @@ describe("people and edge cases", () => {
   });
 
   it("an advisor who is also the registration manager is approved by submitting; the VP stays required", () => {
-    const shuli = letter({ people: { advisorId: "shuli", rmIds: ["shuli"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] } });
+    const shuli = letter({ people: { advisorId: "shuli", extraAdvisorIds: [], rmIds: ["shuli"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] } });
     const v = flowView(shuli);
     expect(v.seats[0]).toMatchObject({ key: "RM", status: "approved", auto: true });
     expect(v.holder.userIds).toEqual(["yossi"]);
@@ -284,6 +284,19 @@ describe("people and edge cases", () => {
     expect(abilities(veronica, letter()).uploadVersion).toBe(true);
     expect(abilities(veronica, letter({ phase: "APPROVED" })).uploadVersion).toBe(false);
     expect(abilities(oron, letter({ openComments: 1 })).uploadVersion).toBe(false);
+  });
+
+  it("extra people added to a track share it: another advisor fixes, another manager reviews", () => {
+    const extra = letter({ people: { ...letter().people, extraAdvisorIds: ["limor"], rmIds: ["oron", "oshrat"] } });
+    const limor: Actor = { userId: "limor", roles: ["CONTROL_ADVISOR"] };
+    const oshrat: Actor = { userId: "oshrat", roles: ["REGISTRATION_MANAGER"] };
+    expect(abilities(oshrat, extra).decide).toEqual([{ seat: "RM", onBehalfOf: null }]);
+    expect(flowView(extra).holder.userIds).toEqual(["oron", "oshrat"]);
+    const fixing = { ...extra, openComments: 1 };
+    expect(flowView(fixing).holder.userIds).toEqual(["shaked", "limor"]);
+    expect(abilities(limor, fixing).uploadVersion).toBe(true);
+    expect(abilities(limor, fixing).handleComments).toBe(true);
+    expect(abilities(limor, letter()).view).toBe(false);
   });
 
   it("the unit's manager does not see letters of other units", () => {

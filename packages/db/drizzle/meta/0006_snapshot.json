@@ -1,5 +1,5 @@
 {
-  "id": "67a7ae60-2ce1-4270-a224-54c5b8b45947",
+  "id": "85b03b55-a4a3-4cdc-afd2-73f4f3ba92c0",
   "prevId": "df3fd26f-b91d-48d5-9bc6-830b254fffda",
   "version": "7",
   "dialect": "postgresql",
@@ -737,6 +737,140 @@
           "tableTo": "users",
           "columnsFrom": [
             "invited_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.letter_people": {
+      "name": "letter_people",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "letter_id": {
+          "name": "letter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "letter_people_letter_idx": {
+          "name": "letter_people_letter_idx",
+          "columns": [
+            {
+              "expression": "letter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "letter_people_once_uq": {
+          "name": "letter_people_once_uq",
+          "columns": [
+            {
+              "expression": "letter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "letter_people_letter_id_letter_requests_id_fk": {
+          "name": "letter_people_letter_id_letter_requests_id_fk",
+          "tableFrom": "letter_people",
+          "tableTo": "letter_requests",
+          "columnsFrom": [
+            "letter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "letter_people_user_id_users_id_fk": {
+          "name": "letter_people_user_id_users_id_fk",
+          "tableFrom": "letter_people",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "letter_people_added_by_users_id_fk": {
+          "name": "letter_people_added_by_users_id_fk",
+          "tableFrom": "letter_people",
+          "tableTo": "users",
+          "columnsFrom": [
+            "added_by"
           ],
           "columnsTo": [
             "id"

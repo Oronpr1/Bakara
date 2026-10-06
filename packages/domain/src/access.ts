@@ -20,7 +20,7 @@ export function canGlobal(actor: Actor, action: GlobalAction): boolean {
     case "MANAGE_USERS":
       return has(actor, "ADMIN", "CONTROL_MANAGER");
     case "MANAGE_RULES":
-      return has(actor, "ADMIN");
+      return has(actor, "ADMIN", "CONTROL_MANAGER");
     case "MANAGE_SEASONS":
     case "MANAGE_UNITS":
       return has(actor, "CONTROL_MANAGER", "VP_REGISTRATION", "ADMIN");
@@ -70,7 +70,7 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
   const cm = has(actor, "CONTROL_MANAGER");
   const vp = has(actor, "VP_REGISTRATION");
   const admin = has(actor, "ADMIN");
-  const advisor = actor.userId === people.advisorId;
+  const advisor = actor.userId === people.advisorId || people.extraAdvisorIds.includes(actor.userId);
   const rm = people.rmIds.includes(actor.userId);
   const academic = input.academics.includes(actor.userId);
   const inWorkspace = advisor || rm || cm || vp;

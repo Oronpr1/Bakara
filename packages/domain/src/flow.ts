@@ -42,6 +42,8 @@ export const DEFAULT_SETTINGS: FlowSettings = { sequential: true, controlReview:
 
 export interface FlowPeople {
   advisorId: string;
+  /** More advisors added to this track by the control manager; they prepare and fix like the main one. */
+  extraAdvisorIds: readonly string[];
   /** Who is the registration manager for this letter right now (empty = nobody set). */
   rmIds: readonly string[];
   /** "In this unit only the VP reviews": no registration manager is needed. */
@@ -166,7 +168,8 @@ export function seatsOf(input: FlowInput): Seat[] {
     keys.push({ key: "VP", holders: people.vpIds });
   } else if (phase === "ACADEMIC") {
     for (const id of input.academics) keys.push({ key: academicSeat(id), holders: [id] });
-  } else if (phase === "FINAL") {
+  } else if (phase === "FINAL" || phase === "APPROVED") {
+    // Once approved, the final seat stays so the screens can say who signed.
     keys.push({ key: "FINAL", holders: people.vpIds });
   }
 
@@ -191,7 +194,7 @@ export function seatsOf(input: FlowInput): Seat[] {
 /** Everything the screens and the rules need to know about where the letter stands. */
 export function flowView(input: FlowInput): FlowView {
   const { phase, people } = input;
-  const advisor = { kind: "ADVISOR" as const, userIds: [people.advisorId] };
+  const advisor = { kind: "ADVISOR" as const, userIds: [people.advisorId, ...people.extraAdvisorIds] };
   const none = { kind: "NONE" as const, userIds: [] as string[] };
   const seats = seatsOf(input);
   const returned = seats.some((s) => s.status === "returned");

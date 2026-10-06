@@ -9,6 +9,15 @@ CREATE TABLE "letter_academics" (
 	"removed_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE TABLE "letter_people" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"letter_id" uuid NOT NULL,
+	"user_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"added_by" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "reviews" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"letter_id" uuid NOT NULL,
@@ -42,11 +51,16 @@ ALTER TABLE "versions" ADD COLUMN "text_match" integer;--> statement-breakpoint
 ALTER TABLE "letter_academics" ADD CONSTRAINT "letter_academics_letter_id_letter_requests_id_fk" FOREIGN KEY ("letter_id") REFERENCES "public"."letter_requests"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "letter_academics" ADD CONSTRAINT "letter_academics_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "letter_academics" ADD CONSTRAINT "letter_academics_invited_by_users_id_fk" FOREIGN KEY ("invited_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "letter_people" ADD CONSTRAINT "letter_people_letter_id_letter_requests_id_fk" FOREIGN KEY ("letter_id") REFERENCES "public"."letter_requests"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "letter_people" ADD CONSTRAINT "letter_people_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "letter_people" ADD CONSTRAINT "letter_people_added_by_users_id_fk" FOREIGN KEY ("added_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reviews" ADD CONSTRAINT "reviews_letter_id_letter_requests_id_fk" FOREIGN KEY ("letter_id") REFERENCES "public"."letter_requests"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reviews" ADD CONSTRAINT "reviews_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "reviews" ADD CONSTRAINT "reviews_on_behalf_of_users_id_fk" FOREIGN KEY ("on_behalf_of") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "letter_academics_letter_idx" ON "letter_academics" USING btree ("letter_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "letter_academics_once_uq" ON "letter_academics" USING btree ("letter_id","user_id");--> statement-breakpoint
+CREATE INDEX "letter_people_letter_idx" ON "letter_people" USING btree ("letter_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "letter_people_once_uq" ON "letter_people" USING btree ("letter_id","user_id","kind");--> statement-breakpoint
 CREATE INDEX "reviews_letter_idx" ON "reviews" USING btree ("letter_id","created_at");--> statement-breakpoint
 ALTER TABLE "letter_requests" ADD CONSTRAINT "letter_requests_registration_manager_id_users_id_fk" FOREIGN KEY ("registration_manager_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "letter_requests_season_phase_idx" ON "letter_requests" USING btree ("season_id","phase");--> statement-breakpoint

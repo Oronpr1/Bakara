@@ -3,7 +3,7 @@ import type { Decision, FlowInput, FlowSettings } from "@al/domain";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { notFound } from "../errors";
 
-const { letterRequests, seasons, units, campuses, users, letterAcademics, reviews, comments } = schema;
+const { letterRequests, seasons, units, campuses, users, letterAcademics, letterPeople, reviews, comments } = schema;
 
 /** A transaction or the database; both expose the same query API. */
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
@@ -52,12 +52,13 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const seasonIds = [...new Set(rows.map((r) => r.seasonId))];
-  const [seasonRows, unitRows, campusRows, system, academicRows, reviewRows, commentRows] = await Promise.all([
+  const [seasonRows, unitRows, campusRows, system, academicRows, extraRows, reviewRows, commentRows] = await Promise.all([
     tx.select().from(seasons).where(inArray(seasons.id, seasonIds)),
     tx.select().from(units),
     tx.select().from(campuses),
     systemPeople(tx),
     tx.select().from(letterAcademics).where(and(inArray(letterAcademics.letterId, ids), isNull(letterAcademics.removedAt))),
+    tx.select().from(letterPeople).where(inArray(letterPeople.letterId, ids)),
     tx.select().from(reviews).where(inArray(reviews.letterId, ids)).orderBy(asc(reviews.createdAt)),
     tx
       .select({ letterId: comments.letterId, n: sql<number>`count(*)::int` })
@@ -93,13 +94,15 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
         note: r.note,
         at: r.createdAt,
       }));
+    const extra = extraRows.filter((e) => e.letterId === row.id);
     const input: FlowInput = {
       phase: row.phase,
       latestVersion: row.latestVersion,
       settings: settingsOf(season),
       people: {
         advisorId: row.advisorId,
-        rmIds: rm ? [rm] : [],
+        extraAdvisorIds: extra.filter((e) => e.kind === "ADVISOR").map((e) => e.userId),
+        rmIds: [...(rm ? [rm] : []), ...extra.filter((e) => e.kind === "MANAGER").map((e) => e.userId)],
         onlyVp: Boolean(unit?.onlyVp || (campus?.onlyVp && !unit?.registrationManagerId)) && !row.registrationManagerId,
         vpIds: system.vpIds,
         controlIds: system.controlIds,

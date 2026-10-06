@@ -179,6 +179,24 @@ export const letterRequests = pgTable(
   ],
 );
 
+/**
+ * Extra people on one track, added by the control manager at her discretion: more advisors
+ * (they prepare and fix the letter like the main one) and more managers (they review in the
+ * registration manager's seat; any one of them may decide).
+ */
+export const letterPeople = pgTable(
+  "letter_people",
+  {
+    id: id(),
+    letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    kind: text("kind", { enum: ["ADVISOR", "MANAGER"] }).notNull(),
+    addedBy: uuid("added_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("letter_people_letter_idx").on(t.letterId), uniqueIndex("letter_people_once_uq").on(t.letterId, t.userId, t.kind)],
+);
+
 /** The academic approvers invited to a letter (each answers through a personal link). */
 export const letterAcademics = pgTable(
   "letter_academics",

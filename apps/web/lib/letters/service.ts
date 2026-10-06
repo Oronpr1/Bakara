@@ -24,7 +24,7 @@ import { afterChange } from "./engine";
 import { syncLiveFileLock } from "./live-file-lock";
 import { loadLetter, type LoadedLetter, type Tx } from "./state";
 
-const { users, seasons, letterRequests, versions, reviews, comments } = schema;
+const { users, seasons, letterRequests, versions, reviews, comments, letterPeople } = schema;
 
 /**
  * Runs one action on one letter in a transaction: loads it locked, hands over what the actor may
@@ -207,6 +207,8 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
     const letter = inserted[0];
     if (!letter) throw new AppError("CONFLICT", "כבר קיימת דרישת מכתב למסלול הזה בקמפוס הזה בעונה הזאת");
     await audit(tx, actor.userId, "LETTER_CREATED", { letterId: letter.id, seasonId: letter.seasonId }, { trackName });
+    // A new letter to prepare lands on the advisor's list.
+    await notify(tx, [advisorId], "YOUR_TURN", letter.id, actor.userId);
     return letter;
   });
 }
@@ -229,6 +231,28 @@ export async function setLetterRegistrationManager(actor: Actor, letterId: strin
     if (userId) await assertRole(tx, [userId], "REGISTRATION_MANAGER");
     await tx.update(letterRequests).set({ registrationManagerId: userId }).where(eq(letterRequests.id, letterId));
     await audit(tx, actor.userId, "REGISTRATION_MANAGER_SET", { letterId, seasonId: l.row.seasonId }, { userId });
+  });
+}
+
+/**
+ * More people on one track, at the control manager's discretion: another advisor (prepares and
+ * fixes like the main one) or another manager (reviews in the registration manager's seat).
+ */
+export async function addLetterPerson(actor: Actor, letterId: string, userId: string, kind: "ADVISOR" | "MANAGER", db: Db = getDb()) {
+  if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
+  await withLetter(db, actor, letterId, async ({ tx, l }) => {
+    await assertRole(tx, [userId], kind === "ADVISOR" ? "CONTROL_ADVISOR" : "REGISTRATION_MANAGER");
+    await tx.insert(letterPeople).values({ letterId, userId, kind, addedBy: actor.userId }).onConflictDoNothing();
+    await audit(tx, actor.userId, "PERSON_ADDED", { letterId, seasonId: l.row.seasonId }, { userId, kind });
+    await notify(tx, [userId], "YOUR_TURN", letterId, actor.userId);
+  });
+}
+
+export async function removeLetterPerson(actor: Actor, letterId: string, userId: string, kind: "ADVISOR" | "MANAGER", db: Db = getDb()) {
+  if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
+  await withLetter(db, actor, letterId, async ({ tx, l }) => {
+    await tx.delete(letterPeople).where(and(eq(letterPeople.letterId, letterId), eq(letterPeople.userId, userId), eq(letterPeople.kind, kind)));
+    await audit(tx, actor.userId, "PERSON_REMOVED", { letterId, seasonId: l.row.seasonId }, { userId, kind });
   });
 }
 

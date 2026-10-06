@@ -23,7 +23,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { notFound } from "../errors";
 import { loadLetter, loadLetters, type LetterRow, type LoadedLetter } from "./state";
 
-const { users, seasons, letterRequests, comments, commentReplies, versions, auditEvents, academicLinks, letterAcademics } = schema;
+const { users, seasons, letterRequests, comments, commentReplies, versions, auditEvents, academicLinks, letterAcademics, letterPeople } = schema;
 
 export type SeasonRow = typeof seasons.$inferSelect;
 export interface UserOption {
@@ -322,6 +322,12 @@ export interface LetterRoom {
   academics: RoomAcademic[];
   /** For reassigning the advisor (only when the actor may). */
   advisors: { id: string; name: string }[];
+  /** More people the control manager added to this track. */
+  extraPeople: { userId: string; name: string; kind: "ADVISOR" | "MANAGER" }[];
+  /** Everyone who can be added to a track (only when the actor may manage people). */
+  addable: { advisors: { id: string; name: string }[]; managers: { id: string; name: string }[] };
+  /** Who the registration manager(s) of this letter are right now. */
+  managerNames: string[];
   /** Last season's approved file for this track: the starting point for this year's letter. */
   starter: { versionId: string; number: number; seasonName: string } | null;
   /** The advisor has fixed comments but has not uploaded a version since the letter was returned. */
@@ -336,8 +342,9 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
   // Hide the letter's existence from people who may not see it.
   if (!can.view) throw notFound();
 
-  const [people, versionRows, commentRows, replyRows, history, academicRows, linkRows, starterRows] = await Promise.all([
+  const [people, extraRows, versionRows, commentRows, replyRows, history, academicRows, linkRows, starterRows] = await Promise.all([
     listUsers(db),
+    db.select().from(letterPeople).where(eq(letterPeople.letterId, letterId)),
     db.select().from(versions).where(eq(versions.letterId, letterId)).orderBy(desc(versions.number)),
     db.select().from(comments).where(eq(comments.letterId, letterId)).orderBy(asc(comments.createdAt)),
     db
@@ -444,6 +451,14 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
     history: history.map((h) => ({ id: h.id, at: h.at, type: h.type, actorName: nameOf(h.actorId), data: (h.data ?? {}) as Record<string, unknown> })),
     academics,
     advisors: can.reassignAdvisor ? usersWithRole(people, "CONTROL_ADVISOR").map((u) => ({ id: u.id, name: u.name })) : [],
+    extraPeople: extraRows.map((e) => ({ userId: e.userId, name: nameOf(e.userId) ?? "—", kind: e.kind })),
+    addable: canGlobal(actor, "MANAGE_UNITS")
+      ? {
+          advisors: usersWithRole(people, "CONTROL_ADVISOR").map((u) => ({ id: u.id, name: u.name })),
+          managers: usersWithRole(people, "REGISTRATION_MANAGER").map((u) => ({ id: u.id, name: u.name })),
+        }
+      : { advisors: [], managers: [] },
+    managerNames: l.input.people.rmIds.map((id) => nameOf(id) ?? "—"),
     starter: starterRows[0] ? { versionId: starterRows[0].id, number: starterRows[0].number, seasonName: starterRows[0].seasonName } : null,
     noNewVersionSinceReturn: Boolean(lastReturn && lastReturn.versionNumber >= l.row.latestVersion && can.flow.fixing),
     names: Object.fromEntries(names),
