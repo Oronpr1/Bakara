@@ -1,6 +1,6 @@
 import { getDb, schema, type Db } from "@al/db";
-import { pendingApprovers, isOpenComment } from "@al/domain";
-import { and, asc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { flowView } from "@al/domain";
+import { and, asc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { loadLetter } from "../letters/state";
 import { getMailer } from "../mail";
 import { notify, type NotificationType } from "../notify";
@@ -70,34 +70,24 @@ export async function sendPendingEmails(db: Db = getDb(), now = new Date(), appU
 const DAY = 24 * 60 * 60 * 1000;
 
 /**
- * Reminds people who have had something waiting for them longer than the season's interval
- * (set by the control manager), at most once per interval per letter.
+ * Reminds whoever holds a letter when they have had it longer than the season's interval (set by
+ * the control manager), at most once per interval per letter and person.
  */
 export async function queueReminders(db: Db = getDb(), now = new Date()) {
   const open = await db
-    .select({ id: letterRequests.id, stage: letterRequests.stage, since: letterRequests.stageChangedAt, interval: seasons.reminderIntervalDays })
+    .select({ letter: letterRequests, interval: seasons.reminderIntervalDays })
     .from(letterRequests)
     .innerJoin(seasons, eq(seasons.id, letterRequests.seasonId))
-    .where(and(eq(seasons.status, "ACTIVE"), notInArray(letterRequests.stage, ["APPROVED"])));
-
-  const managers = (
-    await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(eq(users.active, true), sql`'CONTROL_MANAGER' = any(${users.roles})`))
-  ).map((u) => u.id);
+    .where(and(eq(seasons.status, "ACTIVE"), ne(letterRequests.phase, "APPROVED")));
 
   let queued = 0;
-  for (const l of open) {
-    const intervalMs = l.interval * DAY;
-    if (now.getTime() - l.since.getTime() < intervalMs) continue;
+  for (const { letter, interval } of open) {
+    const intervalMs = interval * DAY;
+    if (now.getTime() - letter.holderSince.getTime() < intervalMs) continue;
 
-    const { state } = await loadLetter(db, l.id);
-    let waiting: string[] = [];
-    if (l.stage === "REGISTRATION_ROUND" || l.stage === "ACADEMIC_ROUND") waiting = pendingApprovers(state).map((a) => a.userId);
-    else if (l.stage === "INITIAL_REVIEW" || l.stage === "FINAL_REVIEW") waiting = managers;
-    // The advisor is reminded about a draft, or about comments left open.
-    if (l.stage === "DRAFT" || state.comments.some((c) => isOpenComment(c.status))) waiting.push(state.advisorId);
+    const { input } = await loadLetter(db, letter.id);
+    const view = flowView(input);
+    const waiting = [...view.holder.userIds];
     if (waiting.length === 0) continue;
 
     const recent = await db
@@ -105,7 +95,7 @@ export async function queueReminders(db: Db = getDb(), now = new Date()) {
       .from(notifications)
       .where(
         and(
-          eq(notifications.letterId, l.id),
+          eq(notifications.letterId, letter.id),
           eq(notifications.type, "REMINDER"),
           gte(notifications.createdAt, new Date(now.getTime() - intervalMs)),
         ),
@@ -113,7 +103,7 @@ export async function queueReminders(db: Db = getDb(), now = new Date()) {
     const already = new Set(recent.map((r) => r.userId));
     const due = [...new Set(waiting)].filter((u) => !already.has(u));
     if (due.length === 0) continue;
-    await notify(db, due, "REMINDER", l.id, null, { days: Math.floor((now.getTime() - l.since.getTime()) / DAY) });
+    await notify(db, due, "REMINDER", letter.id, null, { days: Math.floor((now.getTime() - letter.holderSince.getTime()) / DAY) });
     queued += due.length;
   }
   return queued;

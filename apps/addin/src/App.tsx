@@ -216,10 +216,9 @@ function FileName({ name }: { name: string }) {
 
 const STAGE_TONE: Record<Stage, string> = {
   DRAFT: "draft",
-  INITIAL_REVIEW: "review",
-  REGISTRATION_ROUND: "review",
-  ACADEMIC_ROUND: "review",
-  FINAL_REVIEW: "review",
+  REVIEW: "review",
+  ACADEMIC: "review",
+  FINAL: "review",
   APPROVED: "approved",
 };
 

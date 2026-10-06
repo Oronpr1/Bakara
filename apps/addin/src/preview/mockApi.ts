@@ -113,7 +113,7 @@ export class MockApi implements Api {
     this.opts.letter = {
       ...letter,
       latestVersion: versionNumber,
-      ...(submitted ? { stage: "INITIAL_REVIEW", stageLabel: "בדיקה ראשונית", canSubmit: false } : {}),
+      ...(submitted ? { stage: "REVIEW", stageLabel: "בבדיקה", canSubmit: false } : {}),
     };
     return {
       versionNumber,

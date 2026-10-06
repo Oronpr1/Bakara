@@ -1,6 +1,6 @@
 // Shapes returned by the web app's /api/addin/* routes (apps/web/lib/addin/letters.ts).
 
-export type Stage = "DRAFT" | "INITIAL_REVIEW" | "REGISTRATION_ROUND" | "ACADEMIC_ROUND" | "FINAL_REVIEW" | "APPROVED";
+export type Stage = "DRAFT" | "REVIEW" | "ACADEMIC" | "FINAL" | "APPROVED";
 
 export interface AddinComment {
   id: string;

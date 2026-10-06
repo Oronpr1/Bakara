@@ -113,7 +113,7 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
     resubmit: canSee && view.fixing && input.openComments === 0 && (advisor || cm),
     decide,
     retract,
-    sendToAcademic: canSee && phase === "ACADEMIC" && input.academics.length === 0 && inWorkspace && !view.fixing,
+    sendToAcademic: canSee && phase === "ACADEMIC" && inWorkspace,
     skipAcademic: canSee && phase === "ACADEMIC" && (cm || vp),
     resetApprovals: canSee && commentPhase.includes(phase) && (cm || vp),
     reopen: canSee && phase === "APPROVED" && (cm || vp),

@@ -95,15 +95,10 @@ export async function planTrackImport(
     const who = { advisorId: advisor!.id, advisorName: advisor!.name };
 
     if (exists.has(k)) return { ...row, status: "EXISTS", ...who };
-    if (!(unit?.registrationManagerId ?? camp?.registrationManagerId)) {
+    // A track in a campus + faculty without a registration manager is still created: it shows red
+    // ("חסר מנהל רישום") until someone is set for it, and cannot be sent to review before that.
+    if (!(unit?.registrationManagerId ?? camp?.registrationManagerId) && !unit?.onlyVp && !camp?.onlyVp)
       noManager.set(`${row.campus}\u0000${row.faculty}`, { campus: row.campus, faculty: row.faculty });
-      return {
-        ...row,
-        status: "ERROR",
-        problem: `אין מנהל רישום ל${row.faculty} ב${row.campus}. מגדירים אותו ב"קמפוסים ופקולטות" ומייבאים שוב`,
-        ...who,
-      };
-    }
     return { ...row, status: "OK", ...who };
   });
   return report(planned, [...new Map([...noManager, ...noAdvisor]).values()]);

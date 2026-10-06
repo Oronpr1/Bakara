@@ -1,5 +1,5 @@
 import { getDb, schema, type Db } from "@al/db";
-import type { Stage } from "@al/domain";
+import type { Phase } from "@al/domain";
 import { eq } from "drizzle-orm";
 import { getDocumentHost } from "../m365/config";
 import type { DocumentHost } from "../m365/documents";
@@ -15,8 +15,8 @@ const { letterRequests } = schema;
  */
 export async function syncLiveFileLock(
   letterId: string,
-  from: Stage,
-  to: Stage,
+  from: Phase,
+  to: Phase,
   actorId: string,
   opts: { db?: Db; host?: DocumentHost | null } = {},
 ) {
