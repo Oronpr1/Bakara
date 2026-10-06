@@ -546,12 +546,21 @@
     gap: 0;
   }
 }
+.alpr-page-now {
+  display: none;
+  min-width: 3.2em;
+  text-align: center;
+  color: var(--alpr-muted);
+  font-variant-numeric: tabular-nums;
+}
 @media (max-width: 480px) {
-  /* a phone shows the zoom in the page itself; the % would push the tools to a second row */
-  .alpr-zoom {
+  /* one row on a phone: the zoom shows in the page itself, and the page
+     number field (whose keyboard would cover the letter anyway) becomes text */
+  .alpr-zoom,
+  .alpr-page-label {
     display: none;
   }
-  .alpr-page-input {
-    width: 2.6em;
+  .alpr-page-now {
+    display: inline-block;
   }
 }

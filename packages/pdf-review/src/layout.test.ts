@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { captureAnchor, computeLayout, fitWidthZoom, navState, scrollForAnchor, spacingFor } from "./layout";
+import {
+  captureAnchor,
+  computeLayout,
+  fitPageZoom,
+  fitWidthZoom,
+  navState,
+  parseZoomInput,
+  scrollForAnchor,
+  spacingFor,
+  stepZoomPercent,
+} from "./layout";
 
 const A4 = { width: 793.7, height: 1122.5 }; // CSS px at zoom 1
 const two = [A4, A4];
@@ -38,6 +48,39 @@ describe("fit width", () => {
 
   it("is tighter on a phone", () => {
     expect(spacingFor(390).pad).toBeLessThan(spacingFor(1280).pad);
+  });
+});
+
+describe("fit page", () => {
+  it("shows a whole page: limited by the height on a wide view, by the width on a narrow one", () => {
+    const sp = { pad: 16, gap: 20 };
+    const wide = fitPageZoom(two, { width: 1280, height: 800 }, sp);
+    expect(A4.height * wide + 2 * sp.pad).toBeCloseTo(800);
+    const narrow = fitPageZoom(two, { width: 390, height: 700 }, spacingFor(390));
+    expect(A4.width * narrow + 16).toBeCloseTo(390);
+  });
+});
+
+describe("zoom steps", () => {
+  it("each press moves to the next multiple of 5%", () => {
+    expect(stepZoomPercent(1, 1)).toBeCloseTo(1.05);
+    expect(stepZoomPercent(1, -1)).toBeCloseTo(0.95);
+    expect(stepZoomPercent(1.19, 1)).toBeCloseTo(1.2);
+    expect(stepZoomPercent(1.19, -1)).toBeCloseTo(1.15);
+    expect(stepZoomPercent(0.3, -1)).toBeCloseTo(0.25); // the viewer clamps
+    // float noise does not skip a step
+    expect(stepZoomPercent(1.1 + 1e-12, 1)).toBeCloseTo(1.15);
+    expect(stepZoomPercent(0.7 - 1e-12, -1)).toBeCloseTo(0.65);
+  });
+
+  it("reads what was typed in the zoom field", () => {
+    expect(parseZoomInput("120")).toBeCloseTo(1.2);
+    expect(parseZoomInput(" 85 % ")).toBeCloseTo(0.85);
+    expect(parseZoomInput("150%")).toBeCloseTo(1.5);
+    expect(parseZoomInput("99,5")).toBeCloseTo(0.995);
+    expect(parseZoomInput("")).toBeNull();
+    expect(parseZoomInput("abc")).toBeNull();
+    expect(parseZoomInput("0")).toBeNull();
   });
 });
 

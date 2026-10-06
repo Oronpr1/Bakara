@@ -183,30 +183,6 @@ export function releaseCanvas(canvas: HTMLCanvasElement | null | undefined): voi
   canvas.height = 0;
 }
 
-/**
- * Raster one tile of a page: the box `rect` (device px) of the page rendered
- * at `scale` device pixels per PDF point. Only the tile's pixels are
- * allocated, however large the whole page would be at that scale — this is
- * what keeps the magnifier sharp without a giant bitmap.
- */
-export function renderPageTile(
-  doc: PDFDocumentProxy,
-  pageNumber: number,
-  scale: number,
-  rect: { left: number; top: number; width: number; height: number },
-  priority = 3,
-): RenderJob<HTMLCanvasElement> {
-  return renderQueue.enqueue(priority, async (ctx) => {
-    const page = await doc.getPage(pageNumber);
-    if (ctx.cancelled) throw new Error("cancelled");
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(rect.width));
-    canvas.height = Math.max(1, Math.round(rect.height));
-    const viewport = page.getViewport({ scale, offsetX: -rect.left, offsetY: -rect.top });
-    return paintOrRelease(canvas, page.render({ canvas, viewport, background: "#ffffff" }), ctx);
-  });
-}
-
 export interface SnapshotOptions {
   /** Margin around the marked area, in PDF points. Default 12. */
   margin?: number;
@@ -214,6 +190,11 @@ export interface SnapshotOptions {
   outline?: string | false;
   /** Image type; default "image/png". */
   type?: string;
+  /**
+   * Draw this mark instead of a plain outline: an X across the area, or the
+   * line through `points` (fractions of the page). The colour is `outline`'s.
+   */
+  mark?: { kind: "NOTE" | "X" | "LINE"; points?: ReadonlyArray<{ x: number; y: number }> | null };
 }
 
 /** The anchor fields a snapshot needs; @al/domain's CommentAnchor fits. */
@@ -248,14 +229,31 @@ export async function renderRegionSnapshot(
   if (outline) {
     const g = canvas.getContext("2d")!;
     const lw = Math.max(2, Math.round(s));
+    const px = (x: number) => x * full.width - crop.left;
+    const py = (y: number) => y * full.height - crop.top;
     g.strokeStyle = outline;
     g.lineWidth = lw;
-    g.strokeRect(
-      anchor.x * full.width - crop.left - lw / 2,
-      anchor.y * full.height - crop.top - lw / 2,
-      anchor.width * full.width + lw,
-      anchor.height * full.height + lw,
-    );
+    g.lineCap = "round";
+    const kind = options.mark?.kind;
+    const pts = options.mark?.points;
+    if (kind === "LINE" && pts && pts.length >= 2) {
+      g.lineWidth = lw * 1.5;
+      g.beginPath();
+      g.moveTo(px(pts[0]!.x), py(pts[0]!.y));
+      for (const p of pts.slice(1)) g.lineTo(px(p.x), py(p.y));
+      g.stroke();
+    } else if (kind === "X") {
+      g.lineWidth = lw * 1.5;
+      const [x1, y1, x2, y2] = [px(anchor.x), py(anchor.y), px(anchor.x + anchor.width), py(anchor.y + anchor.height)];
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.moveTo(x2, y1);
+      g.lineTo(x1, y2);
+      g.stroke();
+    } else {
+      g.strokeRect(px(anchor.x) - lw / 2, py(anchor.y) - lw / 2, anchor.width * full.width + lw, anchor.height * full.height + lw);
+    }
   }
 
   return new Promise<Blob>((resolve, reject) =>

@@ -48,6 +48,20 @@ body {
   border-color: #f5a524;
   background: #fff6e5;
 }
+.demo-style {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid #d9dce1;
+  border-radius: 6px;
+}
+.demo-text {
+  display: block;
+  margin-top: 2px;
+  color: #60646c;
+  font-size: 13px;
+}
 .demo-side img {
   display: block;
   max-width: 100%;

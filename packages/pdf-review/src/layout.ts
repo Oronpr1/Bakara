@@ -48,6 +48,36 @@ export function fitWidthZoom(base: readonly Size[], viewWidth: number, sp: Spaci
   return (viewWidth - 2 * sp.pad) / maxW;
 }
 
+/** The zoom at which the largest page fits the view whole, both ways ("fit page"). */
+export function fitPageZoom(base: readonly Size[], view: Size, sp: Spacing): number {
+  const maxW = base.reduce((m, s) => Math.max(m, s.width), 0);
+  const maxH = base.reduce((m, s) => Math.max(m, s.height), 0);
+  if (!(maxW > 0) || !(maxH > 0) || !(view.width > 0) || !(view.height > 0)) return 1;
+  return Math.min((view.width - 2 * sp.pad) / maxW, (view.height - 2 * sp.pad) / maxH);
+}
+
+/** Each − / + press moves the zoom this many percentage points. */
+export const ZOOM_STEP_PERCENT = 5;
+
+/**
+ * One − / + step: to the next multiple of 5% in that direction (119% → 120%
+ * or 115%; 120% → 125% or 115%), so a fitted zoom joins the round steps.
+ */
+export function stepZoomPercent(zoom: number, dir: 1 | -1, step: number = ZOOM_STEP_PERCENT): number {
+  const p = zoom * 100;
+  const eps = 1e-6;
+  const next = dir > 0 ? (Math.floor(p / step + eps) + 1) * step : (Math.ceil(p / step - eps) - 1) * step;
+  return next / 100;
+}
+
+/** What the user typed in the zoom field ("120", "120%", " 85 % ") as a zoom, or null. */
+export function parseZoomInput(text: string): number | null {
+  const m = /^\s*(\d{1,4}(?:[.,]\d+)?)\s*%?\s*$/.exec(text);
+  if (!m) return null;
+  const p = Number(m[1]!.replace(",", "."));
+  return p > 0 ? p / 100 : null;
+}
+
 /** A point of the document, independent of zoom: a page and a fraction of it, plus where it was on screen. */
 export interface ZoomAnchor {
   page: number;

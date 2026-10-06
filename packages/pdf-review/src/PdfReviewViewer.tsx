@@ -716,6 +716,11 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
             />
             <span aria-hidden="true">/ {numPages || "–"}</span>
           </label>
+          {/* a phone has no room for the field: the same "1 / 2" as plain text */}
+          <span className="alpr-page-now" dir="ltr">
+            <span className="alpr-sr">עמוד </span>
+            {currentPage || "–"} / {numPages || "–"}
+          </span>
         </div>
         <div className="alpr-group">
           <button type="button" className="alpr-btn" aria-label="הקטנה" onClick={() => userZoom(zoom / ZOOM_STEP)}>
