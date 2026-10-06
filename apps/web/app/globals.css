@@ -20,6 +20,15 @@
   --brand-fg: #ffffff;
   --surface-2: #f9fafc;
   --line-strong: #c3cbd7;
+  /* The colour of each state, the same on every screen: prepare, review, academic, final. */
+  --prep: #5b6676;
+  --prep-soft: #eceff3;
+  --review: #1f4f8f;
+  --review-soft: #e5edf7;
+  --acad: #6b3fa0;
+  --acad-soft: #efe7f8;
+  --final: #965a00;
+  --final-soft: #fbefd9;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 1px 3px rgb(16 24 40 / 0.06);
   --shadow-lg: 0 12px 32px rgb(16 24 40 / 0.18);
 }
@@ -44,6 +53,14 @@
     --brand-fg: #e3e8ef;
     --surface-2: #1d2531;
     --line-strong: #3b4656;
+    --prep: #98a3b3;
+    --prep-soft: #262e3a;
+    --review: #7eacea;
+    --review-soft: #1b2b40;
+    --acad: #c4a2ee;
+    --acad-soft: #2b2040;
+    --final: #e8b45c;
+    --final-soft: #342814;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
     color-scheme: dark;
@@ -65,6 +82,14 @@
   --color-warn-soft: var(--warn-soft);
   --color-bad: var(--bad);
   --color-bad-soft: var(--bad-soft);
+  --color-prep: var(--prep);
+  --color-prep-soft: var(--prep-soft);
+  --color-review: var(--review);
+  --color-review-soft: var(--review-soft);
+  --color-acad: var(--acad);
+  --color-acad-soft: var(--acad-soft);
+  --color-final: var(--final);
+  --color-final-soft: var(--final-soft);
   --color-brand: var(--brand);
   --color-brand-fg: var(--brand-fg);
   --color-surface-2: var(--surface-2);

@@ -2,7 +2,7 @@
 // letters at every phase of the flow) and the haredi campuses. Safe to run once; it stops if the
 // sample season exists. The sample people have no password, so nobody can sign in as them.
 //   tsx scripts/seed-demo.ts <tracks.xlsx> <letter1.docx> <letter1.pdf> <letter2.docx> <letter2.pdf>
-import { closeDb, getDb, schema } from "@al/db";
+import { closeDb, getDb, hashPassword, schema } from "@al/db";
 import type { Actor, Role } from "@al/domain";
 import { and, eq, sql } from "drizzle-orm";
 import { readFileSync } from "node:fs";
@@ -58,6 +58,13 @@ const limor = await person("demo-limor@example.test", "לימור כהן חופ�
 const shuli = await person("demo-shuli@example.test", "שולי הלל (דמו)", ["CONTROL_ADVISOR", "REGISTRATION_MANAGER"]);
 const head = await person("demo-head@example.test", "פרופ׳ לוי, ראש חוג (דמו)", ["ACADEMIC_APPROVER"]);
 void limor;
+
+// For trying it on a development machine only: DEMO_PASSWORD gives every sample person a password.
+if (process.env.DEMO_PASSWORD) {
+  const passwordHash = await hashPassword(process.env.DEMO_PASSWORD);
+  for (const p of [veronica, yossi, shaked, limor, shuli, head])
+    await db.update(users).set({ passwordHash, passwordSetAt: new Date() }).where(eq(users.id, p.userId));
+}
 
 const season = await createSeason(veronica, { name: SEASON });
 const all = await readTrackFile("tracks.xlsx", Buffer.from(readFileSync(xlsx)));
