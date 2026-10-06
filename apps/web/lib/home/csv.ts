@@ -1,6 +1,5 @@
 // The filtered letter list as a CSV that Excel opens correctly in Hebrew (UTF-8 with a BOM).
 import { STATE_LABELS } from "@al/domain";
-import { holderText } from "@/components/Pills";
 import { formatDate } from "../format";
 import type { HomeLetter } from "./model";
 
@@ -38,7 +37,7 @@ export function lettersCsv(items: HomeLetter[]): string {
     l.advisorName,
     l.rmNames.join(", "),
     STATE_LABELS[l.state],
-    holderText(l.holderNames, null).replace(/^אצל /, ""),
+    l.holderNames.join(", "),
     l.waitingDays,
     l.openComments,
     l.latestVersion || "",
