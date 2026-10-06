@@ -1,4 +1,5 @@
 import {
+  activeApprovers,
   openCommentCount,
   pendingApprovers,
   STAGE_LABELS,
@@ -97,6 +98,8 @@ function nextStep(detail: LetterDetail, open: number): { title: string; icon: Lu
     case "APPROVED":
       return { title: "המכתב אושר להפצה", icon: CircleCheck };
     default:
+      if (row.stage === "ACADEMIC_ROUND" && activeApprovers(state, ["ACADEMIC"]).length === 0)
+        return { title: "צריך לבחור גורם אקדמי (בלוח המאשרים, בהוספת גורם אקדמי)", icon: UserRound };
       if (pendingApprovers(state).length) return { title: `אישור גרסה ${row.latestVersion} ב${STAGE_LABELS[row.stage]}`, icon: Hourglass };
       if (open) return { title: `טיפול ב-${open} הערות פתוחות`, icon: MessageSquare };
       return { title: "הסבב הושלם", icon: CircleCheck };
