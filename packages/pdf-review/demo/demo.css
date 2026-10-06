@@ -48,6 +48,26 @@ body {
   border-color: #f5a524;
   background: #fff6e5;
 }
+.demo-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-inline-end: 6px;
+  border-radius: 50%;
+}
+.demo-side textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 3.2em;
+  margin-top: 4px;
+  font: inherit;
+}
+.demo-text {
+  display: block;
+  margin-top: 2px;
+  color: #60646c;
+  font-size: 13px;
+}
 .demo-side img {
   display: block;
   max-width: 100%;

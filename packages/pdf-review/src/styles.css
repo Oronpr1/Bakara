@@ -3,6 +3,7 @@
  * overrides them on .alpr-root (or any ancestor via its own selector).
  * By default the theme follows prefers-color-scheme; data-theme="light" on
  * .alpr-root opts out of dark, data-theme="dark" on it (or an ancestor) forces it.
+ * A mark's own colour arrives as --mark (and --mark-soft/-strong/-ink/-fold).
  */
 .alpr-root {
   --alpr-bg: #eceef1;
@@ -13,6 +14,7 @@
   --alpr-focus: #0b6bcb;
   --alpr-accent: #0b6bcb;
   --alpr-accent-fg: #ffffff;
+  --alpr-accent-soft: rgb(11 107 203 / 0.12);
   --alpr-open: #d92d20;
   --alpr-open-fill: rgb(217 45 32 / 0.12);
   --alpr-resolved: #8b8d98;
@@ -21,8 +23,11 @@
   --alpr-selected-fill: rgb(245 165 36 / 0.2);
   --alpr-draft: #0b6bcb;
   --alpr-draft-fill: rgb(11 107 203 / 0.14);
+  --alpr-done: #17603a;
   --alpr-page-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
+  --alpr-overlay-bg: rgb(28 32 36 / 0.82);
   --alpr-radius: 6px;
+  --alpr-target: 36px;
 
   display: flex;
   flex-direction: column;
@@ -42,6 +47,7 @@
     --alpr-border: #363a3f;
     --alpr-focus: #5eb1ef;
     --alpr-accent: #3b8eea;
+    --alpr-accent-soft: rgb(59 142 234 / 0.2);
     --alpr-page-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
   }
 }
@@ -54,40 +60,63 @@
   --alpr-border: #363a3f;
   --alpr-focus: #5eb1ef;
   --alpr-accent: #3b8eea;
+  --alpr-accent-soft: rgb(59 142 234 / 0.2);
   --alpr-page-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
 }
+/* touch: 44px targets everywhere */
+@media (pointer: coarse) {
+  .alpr-root {
+    --alpr-target: 44px;
+  }
+}
 
-.alpr-toolbar {
+/* ---- bars ---- */
+.alpr-toolbar,
+.alpr-zoombar {
+  position: relative;
+  z-index: 7;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
-  padding: 6px 12px;
+  gap: 4px 12px;
+  padding: 4px 10px;
   background: var(--alpr-surface);
+  flex-shrink: 0;
+}
+.alpr-toolbar {
   border-block-end: 1px solid var(--alpr-border);
+}
+.alpr-zoombar {
+  justify-content: space-between;
+  border-block-start: 1px solid var(--alpr-border);
+  padding-bottom: max(4px, env(safe-area-inset-bottom));
 }
 .alpr-group {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 .alpr-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 36px;
-  height: 36px;
+  min-width: var(--alpr-target);
+  height: var(--alpr-target);
   padding: 0 8px;
   border: 1px solid transparent;
   border-radius: var(--alpr-radius);
   background: transparent;
   color: inherit;
   font: inherit;
+  white-space: nowrap;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.alpr-btn:hover:not(:disabled) {
-  border-color: var(--alpr-border);
+@media (hover: hover) {
+  .alpr-btn:hover:not(:disabled) {
+    border-color: var(--alpr-border);
+  }
 }
 .alpr-btn:disabled {
   opacity: 0.4;
@@ -97,35 +126,49 @@
   background: var(--alpr-accent);
   color: var(--alpr-accent-fg);
 }
+.alpr-fit[aria-pressed="true"] {
+  background: var(--alpr-accent-soft);
+  color: var(--alpr-accent);
+  border-color: transparent;
+}
 .alpr-btn:focus-visible,
-.alpr-page-input:focus-visible,
+.alpr-zoom-input:focus-visible,
 .alpr-scroller:focus-visible,
-.alpr-box:focus-visible {
+.alpr-box:focus-visible,
+.alpr-mark button:focus-visible {
   outline: 2px solid var(--alpr-focus);
   outline-offset: 2px;
 }
-.alpr-page-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--alpr-muted);
+.alpr-tool[data-tool="X"] .alpr-btn-text {
+  font-weight: 700;
 }
-.alpr-page-input {
-  width: 3.5em;
-  height: 30px;
+.alpr-delete {
+  color: var(--alpr-open);
+}
+.alpr-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 6px;
+  background: var(--alpr-border);
+}
+.alpr-page-now {
+  min-width: 3.4em;
+  text-align: center;
+  color: var(--alpr-muted);
+  font-variant-numeric: tabular-nums;
+}
+.alpr-zoom-input {
+  box-sizing: border-box;
+  width: 64px;
+  height: calc(var(--alpr-target) - 6px);
   padding: 0 4px;
   border: 1px solid var(--alpr-border);
   border-radius: var(--alpr-radius);
   background: var(--alpr-bg);
   color: var(--alpr-fg);
   font: inherit;
-  text-align: center;
-}
-.alpr-zoom {
-  min-width: 3.5em;
-  text-align: center;
   font-variant-numeric: tabular-nums;
-  color: var(--alpr-muted);
+  text-align: center;
 }
 .alpr-sr {
   position: absolute;
@@ -136,12 +179,52 @@
   white-space: nowrap;
 }
 
-.alpr-scroller {
+/* colour palette: inline on a wide screen, a popover on a phone */
+.alpr-color-wrap {
+  position: relative;
+}
+.alpr-palette {
+  display: flex;
+  gap: 2px;
+}
+.alpr-color-toggle {
+  display: none;
+}
+.alpr-swatch {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
+}
+.alpr-swatch-btn {
+  min-width: calc(var(--alpr-target) - 4px);
+  padding: 0;
+}
+.alpr-swatch-btn[aria-checked="true"] {
+  border-color: var(--alpr-fg);
+}
+.alpr-swatch-btn[aria-checked="true"] .alpr-swatch {
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.2),
+    0 0 0 2px var(--alpr-surface),
+    0 0 0 4px currentColor;
+}
+
+/* ---- the document ---- */
+.alpr-stage {
   position: relative;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+.alpr-scroller {
+  position: absolute;
+  inset: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /* a scrollbar appearing must not change the width (and so the fit-width zoom) */
+  scrollbar-gutter: stable;
   /* the browser keeps panning; pinch zoom is ours */
   touch-action: pan-x pan-y;
 }
@@ -157,7 +240,6 @@
 .alpr-error {
   color: var(--alpr-open);
 }
-
 .alpr-page {
   position: absolute;
   background: #fff;
@@ -177,8 +259,10 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
+/* ---- area boxes (comments without a kind; the original style) ---- */
 .alpr-box {
   position: absolute;
   margin: 0;
@@ -193,11 +277,18 @@
   background: var(--alpr-resolved-fill);
   opacity: 0.7;
 }
+.alpr-box[data-draft] {
+  border-style: dashed;
+}
 .alpr-box[data-selected] {
   border: 3px solid var(--alpr-selected);
   background: var(--alpr-selected-fill);
   opacity: 1;
   z-index: 1;
+}
+.alpr-box[data-selected][data-editable] {
+  cursor: move;
+  touch-action: none;
 }
 .alpr-overlay[data-drawing] .alpr-box {
   pointer-events: none;
@@ -223,22 +314,384 @@
   color: #1c2024;
 }
 
+/* ---- marks: note, X, line ---- */
+.alpr-mark {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.alpr-mark[data-selected] {
+  z-index: 2;
+}
+.alpr-mark[data-open] {
+  z-index: 3;
+}
+.alpr-mark[data-resolved]:not([data-selected]) .alpr-grip {
+  opacity: 0.45;
+}
+.alpr-mark .alpr-grip {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.alpr-mark[data-editable][data-selected] .alpr-grip {
+  cursor: move;
+  touch-action: none;
+}
+.alpr-mark[data-inert] .alpr-grip,
+.alpr-mark[data-inert] .alpr-handle {
+  pointer-events: none;
+}
+.alpr-mark button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+}
+
+/* note: tinted area + folded-corner sticker beside it */
+.alpr-note-area {
+  border-radius: 2px;
+  background: var(--mark-soft);
+  box-shadow: inset 0 -2px 0 var(--mark);
+}
+.alpr-mark[data-draft] .alpr-note-area {
+  box-shadow: none;
+  outline: 2px dashed var(--mark);
+  outline-offset: 1px;
+}
+.alpr-mark[data-open] .alpr-note-area,
+.alpr-mark[data-selected] .alpr-note-area {
+  background: var(--mark-strong);
+  box-shadow: inset 0 0 0 1px var(--mark);
+}
+.alpr-mark .alpr-sticker {
+  /* above the area's corner handles, whose large touch targets reach it */
+  z-index: 2;
+  color: var(--mark-ink);
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.14));
+  transition: transform 0.12s;
+}
+/* a 44px touch target around the 28px note */
+.alpr-sticker::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.alpr-sticker-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--mark);
+  font: 700 12px/1 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  /* the folded corner: the bottom-left corner is cut off… */
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 9px 100%, 0 calc(100% - 9px));
+}
+/* …and its flap is drawn folded back over the note */
+.alpr-sticker-face::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(to top right, transparent 50%, var(--mark-fold) 50%);
+}
+.alpr-mark[data-draft] .alpr-sticker-face {
+  clip-path: none;
+  outline: 2px dashed var(--mark-ink);
+  outline-offset: -4px;
+}
+.alpr-mark[data-draft] .alpr-sticker-face::after {
+  display: none;
+}
+.alpr-sticker:hover,
+.alpr-mark[data-open] .alpr-sticker {
+  transform: scale(1.12);
+}
+.alpr-mark[data-selected] .alpr-sticker {
+  transform: scale(1.18);
+  filter: drop-shadow(0 0 0 var(--alpr-surface)) drop-shadow(0 0 2px var(--alpr-focus)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.2));
+}
+.alpr-sticker-check,
+.alpr-badge-check {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  padding: 1px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--alpr-done);
+  color: #fff;
+}
+
+/* X: a cross over its area */
+.alpr-x svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.alpr-x path {
+  fill: none;
+  stroke: var(--mark);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.alpr-mark[data-draft] .alpr-x path {
+  stroke-dasharray: 7 5;
+}
+.alpr-x:hover,
+.alpr-mark[data-open] .alpr-x,
+.alpr-mark[data-selected] .alpr-x {
+  background: var(--mark-soft);
+  outline: 1px solid var(--mark-strong);
+}
+.alpr-mark[data-selected] .alpr-x {
+  outline: 2px solid var(--alpr-focus);
+  outline-offset: 2px;
+}
+
+/* line: a bar rotated from its start; 24px tall to be easy to hit */
+.alpr-line {
+  height: 24px;
+  transform-origin: 0 50%;
+}
+.alpr-line-stroke {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 2px;
+  background: var(--mark);
+}
+.alpr-mark[data-draft] .alpr-line-stroke {
+  background: repeating-linear-gradient(90deg, var(--mark) 0 8px, transparent 8px 13px);
+}
+.alpr-line:hover .alpr-line-stroke,
+.alpr-mark[data-open] .alpr-line-stroke {
+  height: 5px;
+  margin-top: -2.5px;
+}
+.alpr-mark[data-selected] .alpr-line-stroke {
+  box-shadow:
+    0 0 0 2px var(--alpr-surface),
+    0 0 0 4px var(--alpr-focus);
+}
+
+/* the number on an X or a line */
+.alpr-badge {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--mark);
+  color: var(--mark-ink);
+  font: 700 11px/18px system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+.alpr-badge-corner {
+  top: -9px;
+  right: -9px;
+}
+/* a closed mark's badge: the number and a check, side by side */
+.alpr-badge .alpr-badge-check {
+  position: static;
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-inline-start: 2px;
+  padding: 0;
+  vertical-align: -1px;
+  background: none;
+  color: currentColor;
+}
+.alpr-mark[data-draft] .alpr-badge {
+  outline: 1.5px dashed var(--mark-ink);
+  outline-offset: -3px;
+}
+
+/* edit handles of a selected draft */
+.alpr-handle {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid var(--alpr-focus);
+  border-radius: 3px;
+  background: #fff;
+  pointer-events: auto;
+  touch-action: none;
+}
+.alpr-handle::before {
+  content: "";
+  position: absolute;
+  inset: calc((var(--alpr-target) - 12px) / -2);
+}
+.alpr-mark[data-kind="LINE"] .alpr-handle {
+  border-radius: 50%;
+  cursor: crosshair;
+}
+.alpr-handle[data-grip="nw"],
+.alpr-handle[data-grip="se"] {
+  cursor: nwse-resize;
+}
+.alpr-handle[data-grip="ne"],
+.alpr-handle[data-grip="sw"] {
+  cursor: nesw-resize;
+}
+
+/* a mark's preview card */
+.alpr-preview {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--alpr-border);
+  border-inline-start: 4px solid var(--mark);
+  border-radius: 8px;
+  background: var(--alpr-surface);
+  color: var(--alpr-fg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: start;
+  pointer-events: none;
+}
+.alpr-preview-head {
+  font-size: 12px;
+}
+.alpr-preview-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* a mark being placed */
 .alpr-draft {
   position: absolute;
-  border: 2px dashed var(--alpr-draft);
+  border: 2px dashed var(--mark, var(--alpr-draft));
   background: var(--alpr-draft-fill);
   pointer-events: none;
 }
 .alpr-draft[data-pending] {
   border-style: solid;
 }
+.alpr-draft[data-kind="X"] {
+  background: transparent;
+}
+.alpr-draft svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.alpr-draft path,
+.alpr-draft-svg line {
+  fill: none;
+  stroke: var(--mark);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.alpr-draft-svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* ---- floating page pill and tool hint ---- */
+.alpr-pill,
+.alpr-hint {
+  position: absolute;
+  z-index: 4;
+  border-radius: 999px;
+  background: var(--alpr-overlay-bg);
+  color: #fff;
+  font-size: 13px;
+  line-height: 20px;
+  pointer-events: none;
+}
+.alpr-pill {
+  top: 10px;
+  inset-inline-end: 22px;
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.alpr-pill[data-visible] {
+  opacity: 1;
+}
+.alpr-hint {
+  top: 10px;
+  left: 50%;
+  max-width: calc(100% - 32px);
+  padding: 6px 14px;
+  transform: translateX(-50%);
+  text-align: center;
+}
 
 @media (max-width: 600px) {
   .alpr-btn-text {
     display: none;
   }
-  .alpr-toolbar {
-    gap: 4px 8px;
-    padding: 4px 8px;
+  .alpr-toolbar,
+  .alpr-zoombar {
+    gap: 2px 6px;
+    padding-inline: 6px;
+  }
+  .alpr-sep {
+    margin: 0 2px;
+  }
+  /* the palette folds behind one button; it opens centred under the whole
+     bar, so it can never stick out of a narrow screen */
+  .alpr-color-toggle {
+    display: inline-flex;
+  }
+  .alpr-color-wrap {
+    position: static;
+  }
+  .alpr-palette {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - 12px);
+    display: none;
+    padding: 4px;
+    border: 1px solid var(--alpr-border);
+    border-radius: 10px;
+    background: var(--alpr-surface);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  }
+  .alpr-color-wrap[data-open] .alpr-palette {
+    display: flex;
+  }
+}
+@media (max-width: 480px) {
+  /* a phone scrolls with a finger: the ▲ ▼ give way to the zoom controls */
+  .alpr-nav-arrow {
+    display: none;
   }
 }

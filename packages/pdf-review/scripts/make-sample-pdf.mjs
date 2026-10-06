@@ -44,6 +44,14 @@ const pages = [
   ],
 ];
 
+const finePrint = [
+  [
+    "* ההנחה בשכר הלימוד תקפה לשנה הראשונה בלבד, ומותנית בממוצע ציונים גבוה ובנוכחות מלאה.",
+    "** את המסמכים יש להגיש עד אמצע חודש ספטמבר, בלשכת הרישום או בדואר רשום.",
+  ],
+  ["* מכתב זה אינו מהווה התחייבות למלגה, ואינו תקף ללא חתימת ועדת הקבלה."],
+];
+
 const doc = await PDFDocument.create();
 doc.registerFontkit(fontkit);
 const font = await doc.embedFont(await readFile(fontPath), { subset: true });
@@ -60,6 +68,11 @@ pages.forEach((lines, i) => {
     }
     y -= size * 1.9;
   }
+  // Fine print, the kind a reviewer reaches for the magnifier to read.
+  const fine = finePrint[i] ?? [];
+  fine.forEach((text, j) => {
+    page.drawText(text, { x: width - margin - font.widthOfTextAtSize(text, 7), y: 92 - j * 11, size: 7, font, color: rgb(0.25, 0.25, 0.28) });
+  });
   page.drawLine({
     start: { x: margin, y: 60 },
     end: { x: width - margin, y: 60 },
