@@ -236,11 +236,15 @@ export async function getLetterDetail(actor: Actor, letterId: string, db: Db = g
   const replies = new Map<string, (typeof replyRows)[number]["reply"][]>();
   for (const { reply } of replyRows) replies.set(reply.commentId, [...(replies.get(reply.commentId) ?? []), reply]);
 
+  // The list of people (with emails) is only for those who pick approvers; everyone else sees names.
+  const canPick = (["SET_REGISTRATION_MANAGER", "SET_ACADEMIC_APPROVERS", "CHANGE_ADVISOR", "REMOVE_APPROVER"] as const).some((a) =>
+    canOnLetter(actor, a, state),
+  );
   return {
     row,
     state,
     season,
-    people,
+    people: canPick ? people : [],
     names: new Map(people.map((u) => [u.id, u.name])),
     assignments: assigned,
     approvals: given,

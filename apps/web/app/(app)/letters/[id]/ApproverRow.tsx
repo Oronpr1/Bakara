@@ -14,12 +14,15 @@ export function ApproverRow({
   state,
   removed,
   remove,
+  extra,
 }: {
   name: string;
   sub: string;
   state: React.ReactNode;
   removed: boolean;
   remove?: { letterId: string; userId: string; slot: string };
+  /** Anything that goes under the row, e.g. a personal-link control. */
+  extra?: React.ReactNode;
 }) {
   const [asking, setAsking] = useState(false);
   const panel = useId();
@@ -53,6 +56,7 @@ export function ApproverRow({
           </button>
         )}
       </div>
+      {extra}
       {remove && asking && (
         <div id={panel} className="rounded-lg border border-bad/30 bg-bad-soft/40 p-3">
           <ActionForm

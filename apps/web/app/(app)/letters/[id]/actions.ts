@@ -1,7 +1,12 @@
 "use server";
 
 import { ACTIONS, COMMENT_STATUSES } from "@al/domain";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { actorOf } from "@/lib/actor";
+import { requireUser } from "@/lib/auth/session";
+import { userMessage } from "@/lib/errors";
+import { inviteAcademic, reissueLink } from "@/lib/academic/service";
 import type { ActionResult } from "@/lib/action-result";
 import { formObject, runAction } from "@/lib/actions";
 import { createComment, replyToComment, setCommentStatus } from "@/lib/letters/comments";
@@ -179,4 +184,46 @@ export async function commentStatusAction(_prev: ActionResult, form: FormData): 
     (actor, d) => setCommentStatus(actor, d.commentId, { to: d.to, note: d.note, fixedInVersion: d.fixedInVersion }),
     paths,
   );
+}
+
+// ---------------------------------------------------------------- academic approver by personal link
+
+export type InviteResult =
+  | { ok: true; url: string; emailed: boolean; userName: string; expiresAt: string }
+  | { error: string }
+  | null;
+
+const inviteSchema = z.object({
+  letterId,
+  userId: z.uuid().optional(),
+  name: z.string().trim().max(200).optional(),
+  email: z.string().trim().max(200).optional(),
+});
+
+export async function inviteAcademicAction(_prev: InviteResult, form: FormData): Promise<InviteResult> {
+  const actor = actorOf(await requireUser());
+  const parsed = inviteSchema.safeParse(formObject(form));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "הטופס לא מולא כראוי" };
+  const d = parsed.data;
+  try {
+    const issued = d.userId
+      ? await inviteAcademic(actor, d.letterId, { userId: d.userId })
+      : await inviteAcademic(actor, d.letterId, { name: d.name ?? "", email: d.email ?? "" });
+    revalidatePath(`/letters/${d.letterId}`);
+    return { ok: true, url: issued.url, emailed: issued.emailed, userName: issued.userName, expiresAt: issued.expiresAt.toISOString() };
+  } catch (err) {
+    return { error: userMessage(err) };
+  }
+}
+
+export async function reissueLinkAction(_prev: InviteResult, form: FormData): Promise<InviteResult> {
+  const actor = actorOf(await requireUser());
+  const parsed = z.object({ letterId, userId: z.uuid() }).safeParse(formObject(form));
+  if (!parsed.success) return { error: "הטופס לא מולא כראוי" };
+  try {
+    const issued = await reissueLink(actor, parsed.data.letterId, parsed.data.userId);
+    return { ok: true, url: issued.url, emailed: issued.emailed, userName: issued.userName, expiresAt: issued.expiresAt.toISOString() };
+  } catch (err) {
+    return { error: userMessage(err) };
+  }
 }

@@ -55,9 +55,32 @@ export const sessions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     userAgent: text("user_agent"),
+    /** Set when the session was opened from a personal link: it works for this one letter only. */
+    linkLetterId: uuid("link_letter_id"),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("sessions_token_uq").on(t.tokenHash)],
+);
+
+/**
+ * A personal link that lets one academic approver open one letter without a password. Only a
+ * hash of the link's secret is stored. A new link for the same person and letter replaces it.
+ */
+export const academicLinks = pgTable(
+  "academic_links",
+  {
+    id: id(),
+    letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("academic_links_token_uq").on(t.tokenHash), index("academic_links_letter_idx").on(t.letterId, t.userId)],
 );
 
 /** A registration season, e.g. תשפ"ז א'. Each season is its own workspace. */
