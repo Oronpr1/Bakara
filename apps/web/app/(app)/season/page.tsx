@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
-import { currentSeason } from "@/lib/season-context";
 
-/** "מכתבי העונה": the dashboard of the season chosen in the header. */
-export default async function CurrentSeasonPage() {
-  const { current } = await currentSeason();
-  redirect(current ? `/seasons/${current.id}` : "/seasons");
+/** "מכתבי העונה": every letter of the chosen season, on the home screen's list. */
+export default function CurrentSeasonPage() {
+  redirect("/?g=all#letters");
 }
