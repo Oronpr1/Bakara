@@ -79,17 +79,17 @@ export function CommentsPanel({
       )}
 
       {can.comment && !draft && (
-        <button type="button" onClick={onStartMark} className={`${btnSecondary} w-full justify-start`}>
+        <button type="button" onClick={onStartMark} className={`${btnSecondary} w-full justify-start text-start`}>
           <SquareDashedMousePointer aria-hidden className="size-4 text-accent" />
-          סמנו אזור במכתב להערה
-          <span className="text-xs font-normal text-muted">(גרירה, או הקשה בטלפון)</span>
+          <span className="flex flex-col leading-tight">
+            סמנו אזור במכתב להערה
+            <span className="text-xs font-normal text-muted">גוררים מסגרת, או מקישים בטלפון</span>
+          </span>
         </button>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <p className="font-semibold">
-          {open.length > 0 ? plural(open.length, "הערה פתוחה אחת", "הערות פתוחות") : comments.length > 0 ? "אין הערות פתוחות" : ""}
-        </p>
+        <p className="font-semibold">{open.length > 0 ? plural(open.length, "הערה פתוחה אחת", "הערות פתוחות") : ""}</p>
         {resolved.length > 0 && (
           <button type="button" className={`${btnQuiet} hover:border-line-strong hover:text-fg`} onClick={() => setShowResolved((v) => !v)} aria-pressed={showResolved}>
             {showResolved ? <EyeOff aria-hidden className="size-4" /> : <Eye aria-hidden className="size-4" />}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, FileDown, FileText, FileUp, History, Puzzle, TriangleAlert, Upload } from "lucide-react";
-import { startTransition, useActionState, useEffect, useRef } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { FormMessage } from "@/components/ActionForm";
 import { Spinner } from "@/components/Spinner";
 import { btnPrimary, btnQuiet, card, hint, input, label } from "@/components/ui";
@@ -117,9 +117,11 @@ export function VersionsPanel({
 function UploadForm({ letterId, next }: { letterId: string; next: number }) {
   const [state, dispatch, pending] = useActionState<ActionResult, FormData>(uploadVersionAction, null);
   const ref = useRef<HTMLFormElement>(null);
+  const [round, setRound] = useState(0);
   useEffect(() => {
     if (state && "ok" in state) {
       ref.current?.reset();
+      setRound((r) => r + 1);
       toast(state.message ?? "הגרסה הועלתה");
     }
   }, [state]);
@@ -142,14 +144,8 @@ function UploadForm({ letterId, next }: { letterId: string; next: number }) {
         העלאת גרסה {next}
       </h3>
       <p className={hint}>מעלים את קובץ ה-Word ואת ה-PDF שיוצא ממנו (ב-Word: קובץ ← שמירה בשם ← PDF). ה-PDF משמש לבדיקה, וה-Word נשמר כמו שהוא.</p>
-      <label className="flex flex-col gap-1.5">
-        <span className={label}>קובץ Word (DOCX)</span>
-        <input type="file" name="docx" required accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className={`${input} py-2 text-sm`} />
-      </label>
-      <label className="flex flex-col gap-1.5">
-        <span className={label}>קובץ PDF</span>
-        <input type="file" name="pdf" required accept=".pdf,application/pdf" className={`${input} py-2 text-sm`} />
-      </label>
+      <FilePick key={`docx-${round}`} name="docx" title="קובץ Word (DOCX)" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" icon={<FileText aria-hidden className="size-5 text-accent" />} />
+      <FilePick key={`pdf-${round}`} name="pdf" title="קובץ PDF" accept=".pdf,application/pdf" icon={<FileText aria-hidden className="size-5 text-bad" />} />
       <label className="flex flex-col gap-1.5">
         <span className={label}>מה השתנה? (לא חובה)</span>
         <textarea name="note" rows={2} maxLength={2000} className={input} placeholder="למשל: תוקנו הימים ושכר הלימוד" />
@@ -162,5 +158,34 @@ function UploadForm({ letterId, next }: { letterId: string; next: number }) {
         <FormMessage state={state && "error" in state ? state : null} />
       </div>
     </form>
+  );
+}
+
+/** A file field that reads in Hebrew whatever the browser's language: a box to tap, then the file's name. */
+function FilePick({ name, title, accept, icon }: { name: string; title: string; accept: string; icon: React.ReactNode }) {
+  const [file, setFile] = useState<string | null>(null);
+  return (
+    <label className="flex cursor-pointer flex-col gap-1.5">
+      <span className={label}>{title}</span>
+      <span
+        className={`flex min-h-12 items-center gap-2.5 rounded-md border border-dashed px-3 py-2 text-sm transition-colors duration-150 focus-within:outline focus-within:outline-2 focus-within:outline-accent hover:border-accent hover:bg-accent-soft/40 ${
+          file ? "border-good/60 bg-good-soft/40" : "border-line-strong bg-surface"
+        }`}
+      >
+        {icon}
+        <span className={`min-w-0 flex-1 truncate ${file ? "font-semibold" : "text-muted"}`} dir={file ? "auto" : undefined}>
+          {file ?? "בחירת קובץ…"}
+        </span>
+        {file && <span className="text-xs font-semibold text-accent">החלפה</span>}
+        <input
+          type="file"
+          name={name}
+          required
+          accept={accept}
+          className="sr-only"
+          onChange={(e) => setFile(e.currentTarget.files?.[0]?.name ?? null)}
+        />
+      </span>
+    </label>
   );
 }

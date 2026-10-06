@@ -84,7 +84,7 @@ export function AcademicRoom({ room }: { room: RoomProps }) {
     status = (
       <p className="flex items-center gap-2 font-bold text-warn">
         <Undo2 aria-hidden className="size-5" />
-        בקשת התיקון נשלחה ל{advisor}. אם יידרש, תקבל/י קישור לבדיקה חוזרת.
+        בקשת התיקון נשלחה ל{advisor}. אם יידרש, יישלח אליך קישור לבדיקה חוזרת.
       </p>
     );
   } else {

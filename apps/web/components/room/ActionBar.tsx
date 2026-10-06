@@ -53,12 +53,24 @@ export function ActionBar({
     const first = can.decide[0]!;
     const final = first.seat === "FINAL";
     const academic = first.seat.startsWith("ACADEMIC:");
+    // The control manager standing in for someone: say whose turn it really is.
+    const standIn = can.decide.every((d) => d.onBehalfOf) ? joinNames(can.decide.map((d) => nameOf(d.onBehalfOf) ?? "")) : null;
     tone = "accent";
-    title = final ? "ממתין לאישור הסופי שלך" : academic ? "המכתב ממתין להחלטה שלך" : "המכתב ממתין לבדיקה שלך";
+    title = standIn
+      ? final
+        ? `ממתין לאישור הסופי של ${standIn}`
+        : `ממתין לבדיקה של ${standIn}`
+      : final
+        ? "ממתין לאישור הסופי שלך"
+        : academic
+          ? "המכתב ממתין להחלטה שלך"
+          : "המכתב ממתין לבדיקה שלך";
     sub =
       drafts > 0
         ? `כתבת ${plural(drafts, "הערה אחת", "הערות")}. ${drafts === 1 ? "היא תישלח" : "הן יישלחו"} ל${advisor} יחד עם ההחלטה.`
-        : "אפשר לסמן אזורים במכתב ולהעיר לפני ההחלטה.";
+        : standIn
+          ? `אפשר להחליט במקומו. זה יירשם "במקום ${standIn}", והוא יקבל הודעה.`
+          : "אפשר לסמן אזורים במכתב ולהעיר לפני ההחלטה.";
     buttons = can.decide.map((d) => {
       const behalf = nameOf(d.onBehalfOf);
       const seatName = room.seats.find((s) => s.key === d.seat)?.label;
@@ -131,7 +143,11 @@ export function ActionBar({
         ))}
       </ul>
     ) : (
-      `אחרי השליחה המכתב עובר ל${room.managerNames.length ? joinNames(room.managerNames.map(shortName)) : "מבקרים"} לבדיקה.`
+      room.managerNames.includes(room.advisorName)
+        ? 'אחרי השליחה המכתב עובר לבדיקה של הסמנכ"ל. שלב מנהל הרישום מאושר בהגשה, כי היועצת היא גם מנהלת הרישום.'
+        : room.managerNames.length
+          ? `אחרי השליחה המכתב עובר לבדיקה: ${joinNames(room.managerNames.map(shortName))}, ואחר כך הסמנכ"ל.`
+          : 'אחרי השליחה המכתב עובר לבדיקה של הסמנכ"ל.'
     );
     buttons = (
       <QuickAction

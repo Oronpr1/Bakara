@@ -48,32 +48,35 @@ export function PeoplePanel({
         </dl>
       </section>
 
-      <section className="flex flex-col gap-2" aria-labelledby="ppl-now">
-        <h3 id="ppl-now" className="text-sm font-bold text-muted">
-          {room.phase === "DRAFT" ? "מי יבדוק" : room.phase === "ACADEMIC" ? "הגורם האקדמי" : room.phase === "REVIEW" ? "הבדיקה" : "האישור הסופי"}
-        </h3>
-        {room.seats.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-line-strong bg-surface-2 p-3 text-sm text-muted">
-            {room.phase === "DRAFT"
-              ? `אחרי השליחה לבדיקה: ${room.managerNames.length ? `${joinNames(room.managerNames.map(shortName))}, ואחריו ` : ""}הסמנכ"ל.`
-              : room.phase === "ACADEMIC"
-                ? "עוד לא נשלח לגורם אקדמי."
+      {/* The academic step is shown once, with the links, in the section below. */}
+      {room.phase !== "ACADEMIC" && (
+        <section className="flex flex-col gap-2" aria-labelledby="ppl-now">
+          <h3 id="ppl-now" className="text-sm font-bold text-muted">
+            {room.phase === "DRAFT" ? "מי יבדוק" : room.phase === "REVIEW" ? "הבדיקה" : "האישור הסופי"}
+          </h3>
+          {room.seats.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-line-strong bg-surface-2 p-3 text-sm text-muted">
+              {room.phase === "DRAFT"
+                ? room.managerNames.includes(room.advisorName)
+                  ? 'אחרי השליחה לבדיקה: הסמנכ"ל. שלב מנהל הרישום מאושר בהגשה.'
+                  : `אחרי השליחה לבדיקה: ${room.managerNames.length ? `${joinNames(room.managerNames.map(shortName))}, ואחר כך ` : ""}הסמנכ"ל.`
                 : "אין החלטות בשלב הזה."}
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {room.seats.map((s) => (
-              <SeatRow key={s.key} seat={s} room={room} onShowVersions={onShowVersions} />
-            ))}
-          </ul>
-        )}
-      </section>
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {room.seats.map((s) => (
+                <SeatRow key={s.key} seat={s} room={room} onShowVersions={onShowVersions} />
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {showAcademics && (
         <section className="flex flex-col gap-2" aria-labelledby="ppl-acad">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 id="ppl-acad" className="text-sm font-bold text-muted">
-              קישורים אישיים
+              {room.academics.length > 1 ? "הגורמים האקדמיים" : "הגורם האקדמי"}
             </h3>
             {room.can.sendToAcademic && (
               <button type="button" className={btnSecondary} onClick={() => setSending(true)}>
@@ -145,7 +148,8 @@ function Row({ label, value, warn }: { label: string; value: string; warn?: bool
 }
 
 function SeatRow({ seat, room, onShowVersions }: { seat: RoomSeat; room: RoomProps; onShowVersions: () => void }) {
-  const mine = room.can.retract.includes(seat.key);
+  // Once the letter is approved for distribution the way back is "פתח מחדש", not taking back a signature.
+  const mine = room.can.retract.includes(seat.key) && room.phase !== "APPROVED";
   const who = seat.decidedByName ? shortName(seat.decidedByName) : null;
   const behalf = seat.onBehalfOfName ? ` (במקום ${shortName(seat.onBehalfOfName)})` : "";
   const holders = seat.role === "ACADEMIC" ? "" : joinNames(seat.holderNames.map(shortName));
@@ -252,6 +256,10 @@ function AcademicRow({ a, room }: { a: RoomAcademic; room: RoomProps }) {
     ) : a.decision === "CHANGES" ? (
       <Tag tone="bad" icon={Undo2}>
         ביקש תיקון
+      </Tag>
+    ) : room.phase === "ACADEMIC" ? (
+      <Tag tone="accent" icon={Hourglass}>
+        ממתין
       </Tag>
     ) : null;
   return (

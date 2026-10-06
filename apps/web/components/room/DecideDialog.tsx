@@ -52,7 +52,17 @@ export function DecideDialog({
           submitIcon={approve ? <CircleCheck aria-hidden className="size-4" /> : <Undo2 aria-hidden className="size-4" />}
           submitClassName={approve ? btnGood : btnPrimary}
           pendingLabel="שולח…"
-          successMessage={approve ? (final ? "המכתב אושר סופית" : "אישרת את המכתב") : `המכתב הוחזר ל${advisor} לתיקון`}
+          successMessage={
+            academic
+              ? approve
+                ? "תודה, האישור נשלח"
+                : "בקשת התיקון נשלחה"
+              : approve
+                ? final
+                  ? "המכתב אושר סופית"
+                  : "אישרת את המכתב"
+                : `המכתב הוחזר ל${advisor} לתיקון`
+          }
         >
           {target.onBehalfOf && (
             <p className="rounded-md bg-final-soft px-3 py-2 text-sm font-semibold text-final">פעולה במקום {target.onBehalfOf}. זה יירשם, והוא יקבל הודעה.</p>
