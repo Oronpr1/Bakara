@@ -5,7 +5,8 @@ import { SelectField } from "@/components/Field";
 import { btnSecondary, card, summary } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { usersWithRole, type LetterDetail, type UserOption } from "@/lib/letters/queries";
-import { addAcademicAction, changeAdvisorAction, replaceApproverAction } from "./actions";
+import { changeAdvisorAction, replaceApproverAction } from "./actions";
+import { AcademicInvite, ReissueLink } from "./AcademicInvite";
 import { ApproverRow } from "./ApproverRow";
 import { IconTag, SummaryChevron } from "./bits";
 
@@ -119,13 +120,12 @@ export function ApproversPanel({
     );
   if (can("SET_ACADEMIC_APPROVERS"))
     manage.push(
-      <PersonPicker
+      <AcademicInvite
         key="ac"
-        action={addAcademicAction}
-        label="גורם אקדמי"
-        submitLabel="הוסף גורם אקדמי"
         letterId={row.id}
-        people={usersWithRole(people, "ACADEMIC_APPROVER").filter((p) => !activeIds("ACADEMIC").includes(p.id))}
+        people={usersWithRole(people, "ACADEMIC_APPROVER")
+          .filter((p) => !activeIds("ACADEMIC").includes(p.id))
+          .map((p) => ({ id: p.id, name: p.name }))}
       />,
     );
   if (can("CHANGE_ADVISOR"))
@@ -176,6 +176,11 @@ export function ApproversPanel({
                       state={<ApproverState detail={detail} a={a} viewerId={viewerId} />}
                       removed={Boolean(a.removedAt)}
                       remove={!a.removedAt && canRemove(a.slot) ? { letterId: row.id, userId: a.userId, slot: a.slot } : undefined}
+                      extra={
+                        a.slot === "ACADEMIC" && !a.removedAt && can("SET_ACADEMIC_APPROVERS") ? (
+                          <ReissueLink letterId={row.id} userId={a.userId} name={name} />
+                        ) : undefined
+                      }
                     />
                   );
                 })}

@@ -14,6 +14,18 @@ export interface SessionUser {
   email: string;
   name: string;
   roles: Role[];
+  /** Set for a session opened from a personal link: it only works for this letter. */
+  linkLetterId?: string | null;
+}
+
+export const LINK_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+
+/** Opens a session for a personal link. It carries only the academic approver role, whatever else the user is. */
+export async function createLinkSession(userId: string, letterId: string, userAgent: string | null, db: Db = getDb()) {
+  const token = newSessionToken();
+  const expiresAt = new Date(Date.now() + LINK_SESSION_TTL_MS);
+  await db.insert(sessions).values({ tokenHash: tokenHash(token), userId, expiresAt, userAgent, linkLetterId: letterId });
+  return { token, expiresAt };
 }
 
 const tokenHash = (token: string) => keyedHash(token, "session");
@@ -64,7 +76,7 @@ export async function loginWithPassword(
 export async function getSessionUser(token: string | undefined, db: Db = getDb()): Promise<SessionUser | null> {
   if (!token) return null;
   const rows = await db
-    .select({ sessionId: sessions.id, lastSeenAt: sessions.lastSeenAt, user: users })
+    .select({ sessionId: sessions.id, lastSeenAt: sessions.lastSeenAt, linkLetterId: sessions.linkLetterId, user: users })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, tokenHash(token)), gt(sessions.expiresAt, new Date()), eq(users.active, true)))
@@ -75,6 +87,7 @@ export async function getSessionUser(token: string | undefined, db: Db = getDb()
     await db.update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.id, row.sessionId));
   }
   const { id, email, name, roles } = row.user;
+  if (row.linkLetterId) return { id, email, name, roles: ["ACADEMIC_APPROVER"], linkLetterId: row.linkLetterId };
   return { id, email, name, roles };
 }
 

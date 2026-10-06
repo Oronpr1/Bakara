@@ -99,7 +99,8 @@ export function canOnLetter(actor: Actor, action: LetterAction, letter: LetterSt
         )
       );
     case "FINAL_APPROVE":
-      return cm && letter.stage === "FINAL_REVIEW";
+      // מנהלת הבקרה או הסמנכ"ל חותמים סופית.
+      return top && letter.stage === "FINAL_REVIEW";
     case "FORCE_ADVANCE":
       return cm && open && letter.stage !== "FINAL_REVIEW";
     case "SKIP_ACADEMIC":

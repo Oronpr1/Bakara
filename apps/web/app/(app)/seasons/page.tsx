@@ -96,7 +96,7 @@ export default async function SeasonsPage() {
               עונה חדשה
             </h2>
             <p className="text-sm text-muted">
-              עונה על בסיס עונה קודמת מעתיקה את המסלולים והאחראים, בלי גרסאות, הערות ואישורים.
+              עונה על בסיס עונה קודמת מעתיקה את המסלולים (אפשר להחליף את תחילת הקוד, למשל 227 ל-228) ומשייכת את האחראים של היום: מנהל הרישום והיועצת של הקמפוס והפקולטה, והסמנכ"ל. בלי גרסאות, הערות ואישורים.
             </p>
           </div>
           <ActionForm
@@ -104,7 +104,7 @@ export default async function SeasonsPage() {
             submitLabel="צור עונה"
             submitIcon={<Plus aria-hidden className="size-4" />}
             pendingLabel="יוצר…"
-            className="grid gap-4 sm:grid-cols-3 sm:items-start"
+            className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5 sm:items-start"
           >
             <Field label="שם העונה" name="name" required maxLength={100} placeholder={`תשפ"ח א'`} />
             <SelectField
@@ -113,6 +113,8 @@ export default async function SeasonsPage() {
               placeholder="עונה ריקה"
               options={seasons.map((s) => ({ value: s.id, label: s.name }))}
             />
+            <Field label="החלפת תחילת קוד מסלול: מ-" name="codeFrom" placeholder="227" inputMode="numeric" dir="ltr" hint="רק כשיוצרים על בסיס עונה" />
+            <Field label="ל-" name="codeTo" placeholder="228" inputMode="numeric" dir="ltr" />
             <Field
               label="תזכורת אחרי (ימים)"
               name="reminderIntervalDays"

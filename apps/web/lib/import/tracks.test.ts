@@ -19,9 +19,19 @@ describe("track import parsing", () => {
 
   it("names the missing columns", () => {
     expect(parseTrackRows([["שם מסלול", "פקולטה"], ["x", "y"]])).toEqual({
-      error: "חסרות עמודות בשורת הכותרת: מספר מסלול, קמפוס, יועץ בקרה",
+      error: "חסרות עמודות בשורת הכותרת: מספר מסלול, קמפוס",
     });
     expect(parseTrackRows([])).toEqual({ error: "הקובץ ריק" });
+  });
+
+  it("does not need an advisor column, and ignores extra columns", () => {
+    const r = parseTrackRows([
+      ["קמפוס", "פקולטה", "מסלול", "קוד מסלול", "יעד", "."],
+      ["קמפוס אונו", "משפטים", "LLB", "227111005", 25, "-"],
+    ]);
+    expect(r).toEqual({
+      rows: [{ line: 2, trackName: "LLB", trackNumber: "227111005", faculty: "משפטים", campus: "קמפוס אונו", advisor: "" }],
+    });
   });
 
   it("reads CSV with quotes, a BOM and semicolons", () => {
