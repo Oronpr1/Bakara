@@ -39,8 +39,8 @@ export interface ViewerProps {
   className?: string;
 }
 
-/** Size of the area a tap marks, in CSS pixels of the page as shown. */
-const TAP_BOX = { width: 150, height: 44 };
+/** Size of the area a tap marks, as a share of the page: about a phrase on one or two lines. */
+const TAP_BOX = { width: 0.22, height: 0.035 };
 const round = (v: number) => Math.round(v * 1e5) / 1e5;
 
 export function Viewer(props: ViewerProps) {
@@ -70,8 +70,8 @@ export function Viewer(props: ViewerProps) {
       const r = s.page.getBoundingClientRect();
       const pageNumber = Number(s.page.dataset.page);
       if (!doc || !pageNumber || r.width <= 0 || r.height <= 0) return;
-      const width = Math.min(0.6, TAP_BOX.width / r.width);
-      const height = Math.min(0.3, TAP_BOX.height / r.height);
+      const width = TAP_BOX.width;
+      const height = TAP_BOX.height;
       const cx = (s.x - r.left) / r.width;
       const cy = (s.y - r.top) / r.height;
       const x = Math.min(1 - width, Math.max(0, cx - width / 2));

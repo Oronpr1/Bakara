@@ -66,7 +66,7 @@ export function CommentsPanel({
   const visible = [...open, ...(showResolved ? resolved : [])];
 
   const form = draft && (
-    <NewCommentForm key={draft.previewUrl} letterId={letterId} draft={draft} onDone={onDraftDone} notice={draftNotice} />
+    <NewCommentForm key={draft.previewUrl} letterId={letterId} draft={draft} onDone={onDraftDone} notice={draftNotice} inDialog={!isDesktop} />
   );
 
   return (
@@ -127,7 +127,7 @@ export function CommentsPanel({
   );
 }
 
-function NewCommentForm({ letterId, draft, onDone, notice }: { letterId: string; draft: DraftMark; onDone: () => void; notice: string }) {
+function NewCommentForm({ letterId, draft, onDone, notice, inDialog }: { letterId: string; draft: DraftMark; onDone: () => void; notice: string; inDialog: boolean }) {
   const [state, dispatch, pending] = useActionState<ActionResult, FormData>(createCommentAction, null);
   const [suggest, setSuggest] = useState(false);
 
@@ -155,8 +155,12 @@ function NewCommentForm({ letterId, draft, onDone, notice }: { letterId: string;
   const markOnly = draft.kind === "X" || draft.kind === "LINE";
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-lg border border-accent/60 bg-accent-soft/40 p-3" aria-label="הערה חדשה">
-      <div className="flex items-center justify-between gap-2">
+    <form
+      onSubmit={onSubmit}
+      className={inDialog ? "flex flex-col gap-3" : "flex flex-col gap-3 rounded-lg border border-accent/60 bg-accent-soft/40 p-3"}
+      aria-label="הערה חדשה"
+    >
+      <div className={inDialog ? "hidden" : "flex items-center justify-between gap-2"}>
         <p className="flex items-center gap-2 text-sm font-semibold">
           {draft.color ? (
             <span aria-hidden className="size-3.5 rounded-full ring-1 ring-line-strong" style={{ background: draft.color }} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, Clock3, Hourglass, Link2Off, Mail, SendHorizontal, Trash2, TriangleAlert, Undo2, UserRound } from "lucide-react";
+import { CircleCheck, Clock3, Hourglass, Layers, Link2Off, Mail, SendHorizontal, Trash2, TriangleAlert, Undo2, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Tag } from "@/components/Pills";
 import { btnQuiet, btnSecondary } from "@/components/ui";
@@ -195,10 +195,11 @@ function SeatRow({ seat, room, onShowVersions }: { seat: RoomSeat; room: RoomPro
         {status}
       </div>
       {seat.auto && <p className="text-xs text-muted">היועצת היא גם מנהלת הרישום של המסלול, ולכן השלב שלה אושר בהגשה.</p>}
-      {who && seat.decidedAt && !seat.auto && (
+      {seat.decidedAt && !seat.auto && (
         <p className="text-xs text-muted">
-          {who}
-          {behalf} · {relativeDay(seat.decidedAt)}
+          {/* Who pressed the button only when it was not the seat's own holder (a stand-in). */}
+          {who && (behalf || !seat.holderNames.some((n) => shortName(n) === who)) ? `${who}${behalf} · ` : ""}
+          {relativeDay(seat.decidedAt)}
         </p>
       )}
       {seat.note && <p className="whitespace-pre-wrap rounded-md bg-surface-2 px-2 py-1.5 text-sm">&quot;{seat.note}&quot;</p>}
@@ -206,21 +207,24 @@ function SeatRow({ seat, room, onShowVersions }: { seat: RoomSeat; room: RoomPro
         <div className="flex flex-col gap-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
           <p className="flex items-start gap-1.5 font-semibold">
             <TriangleAlert aria-hidden className="mt-0.5 size-4" />
-            יש גרסה חדשה מאז {mine ? "שאישרת" : "האישור"} (גרסה {seat.decidedVersion} ← {room.latestVersion}).{" "}
-            <button type="button" className="text-accent underline-offset-4 hover:underline" onClick={onShowVersions}>
+            יש גרסה חדשה מאז {mine ? "שאישרת" : "האישור"} (גרסה {seat.decidedVersion} ← {room.latestVersion}).
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={`${btnQuiet} bg-surface text-accent hover:border-accent hover:text-accent`} onClick={onShowVersions}>
+              <Layers aria-hidden className="size-4" />
               מה השתנה
             </button>
-          </p>
-          {mine && (
-            <QuickAction
-              action={retractAction}
-              hidden={{ letterId: room.id, seat: seat.key }}
-              label="בטל את האישור שלי"
-              icon={<Undo2 aria-hidden className="size-4" />}
-              className={`${btnQuiet} self-start bg-surface`}
-              confirm={{ message: "לבטל את האישור שלך? המכתב יחזור אליך לבדיקה, ותוכל לאשר או להחזיר לתיקון.", label: "בטל את האישור" }}
-            />
-          )}
+            {mine && (
+              <QuickAction
+                action={retractAction}
+                hidden={{ letterId: room.id, seat: seat.key }}
+                label="בטל את האישור שלי"
+                icon={<Undo2 aria-hidden className="size-4" />}
+                className={`${btnQuiet} bg-surface`}
+                confirm={{ message: "לבטל את האישור שלך? המכתב יחזור אליך לבדיקה, ואפשר יהיה לאשר שוב או להחזיר לתיקון.", label: "בטל את האישור" }}
+              />
+            )}
+          </div>
         </div>
       )}
       {!seat.changedSince && mine && seat.status === "approved" && (
