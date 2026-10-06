@@ -32,6 +32,7 @@ function input(phase: Phase, extra: Partial<FlowInput> = {}): FlowInput {
 /** For each letter-level row: the situations to try, and the ability that answers it. */
 const LETTER_ROWS: Record<string, { cases: FlowInput[]; can: (a: Abilities) => boolean }> = {
   comment: { cases: [input("REVIEW"), input("ACADEMIC"), input("FINAL")], can: (a) => a.comment },
+  reply: { cases: [input("REVIEW"), input("ACADEMIC"), input("FINAL")], can: (a) => a.reply },
   upload: { cases: [input("DRAFT"), input("REVIEW", { advisorHold: true })], can: (a) => a.uploadVersion },
   submit: { cases: [input("DRAFT")], can: (a) => a.submit },
   "handle-comments": { cases: [input("REVIEW")], can: (a) => a.handleComments },
