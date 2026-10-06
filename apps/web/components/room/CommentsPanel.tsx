@@ -82,8 +82,8 @@ export function CommentsPanel({
         <button type="button" onClick={onStartMark} className={`${btnSecondary} w-full justify-start text-start`}>
           <SquareDashedMousePointer aria-hidden className="size-4 text-accent" />
           <span className="flex flex-col leading-tight">
-            סמנו אזור במכתב להערה
-            <span className="text-xs font-normal text-muted">גוררים מסגרת, או מקישים בטלפון</span>
+            הוסיפו הערה על המכתב
+            <span className="text-xs font-normal text-muted">פתק, X או קו - בסרגל הכלים שמעל המכתב</span>
           </span>
         </button>
       )}
@@ -100,7 +100,7 @@ export function CommentsPanel({
 
       {comments.length === 0 ? (
         <EmptyState icon={MessageSquare} title="אין הערות עדיין">
-          {can.comment ? "מסמנים אזור במכתב (גרירה, או הקשה בטלפון) וכותבים מה לתקן." : "הערות שהמבקרים יסמנו על המכתב יופיעו כאן."}
+          {can.comment ? "בוחרים פתק, X או קו בסרגל שמעל המכתב, מסמנים על הדף וכותבים מה לתקן." : "הערות שהמבקרים יסמנו על המכתב יופיעו כאן."}
         </EmptyState>
       ) : visible.length === 0 ? (
         <p className="flex items-center gap-2 rounded-lg bg-good-soft p-3 text-sm font-semibold text-good">

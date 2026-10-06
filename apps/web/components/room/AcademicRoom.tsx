@@ -9,9 +9,8 @@ import { myDrafts, plural, shortName, type RoomProps } from "@/lib/room/view";
 import { CommentsPanel, type DraftMark } from "./CommentsPanel";
 import { DecideDialog, type DecideTarget } from "./DecideDialog";
 import { Toaster } from "./Toast";
-import { Viewer, type MarkResult, type ReviewComment } from "./Viewer";
-
-const DRAFT_ID = "__draft__";
+import { PENDING_ID, reviewComments, useDraftMarks } from "./marks";
+import { Viewer, type MarkResult, type ViewerTool } from "./Viewer";
 
 /**
  * The academic approver's page, opened from a personal link: no menus and no management. The
@@ -20,7 +19,7 @@ const DRAFT_ID = "__draft__";
 export function AcademicRoom({ room }: { room: RoomProps }) {
   const latest = room.versions[0];
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawMode, setDrawMode] = useState(false);
+  const [tool, setTool] = useState<ViewerTool>("select");
   const [draft, setDraft] = useState<DraftMark | null>(null);
   const [decide, setDecide] = useState<DecideTarget | null>(null);
   const [desktop, setDesktop] = useState(true);
@@ -38,17 +37,12 @@ export function AcademicRoom({ room }: { room: RoomProps }) {
   const advisor = shortName(room.advisorName);
   const numbers = useMemo(() => new Map(room.comments.map((c, i) => [c.id, i + 1])), [room.comments]);
 
-  const boxes: ReviewComment[] = useMemo(() => {
-    const list: ReviewComment[] = room.comments
-      .filter((c) => c.versionNumber === latest?.number)
-      .map((c) => ({ id: c.id, page: c.page, x: c.x, y: c.y, width: c.width, height: c.height, status: c.status, label: String(numbers.get(c.id)) }));
-    if (draft) list.push({ ...draft.anchor, id: DRAFT_ID, status: "OPEN", label: "חדשה" });
-    return list;
-  }, [room.comments, numbers, draft, latest?.number]);
+  const boxes = useMemo(() => reviewComments(room.comments, numbers, latest?.number, draft), [room.comments, numbers, draft, latest?.number]);
+  const { onUpdateDraft, onDelete } = useDraftMarks(room.id);
 
-  function onDraw(result: MarkResult) {
+  function onCreate(result: MarkResult) {
     setDraft({ ...result, previewUrl: URL.createObjectURL(result.snapshot) });
-    setDrawMode(false);
+    setTool("select");
   }
 
   let status: React.ReactNode;
@@ -130,11 +124,14 @@ export function AcademicRoom({ room }: { room: RoomProps }) {
               versionNumber={latest.number}
               comments={boxes}
               selectedId={selectedId}
-              onSelect={(id) => id !== DRAFT_ID && setSelectedId(id)}
+              onSelect={(id) => id !== PENDING_ID && setSelectedId(id)}
+              onClearSelection={() => setSelectedId(null)}
               canDraw={room.can.comment}
-              drawMode={drawMode}
-              onDrawModeChange={setDrawMode}
-              onDraw={onDraw}
+              tool={tool}
+              onToolChange={setTool}
+              onCreate={onCreate}
+              onUpdateDraft={onUpdateDraft}
+              onDelete={onDelete}
               showResolved={Boolean(selectedId)}
             />
           ) : (
@@ -159,7 +156,7 @@ export function AcademicRoom({ room }: { room: RoomProps }) {
             draft={draft}
             onDraftDone={() => setDraft(null)}
             onStartMark={() => {
-              setDrawMode(true);
+              setTool("NOTE");
               if (!desktop) document.getElementById("room-letter")?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
             can={{ comment: room.can.comment && Boolean(latest), handle: false, reopenAny: false, closed: room.phase === "APPROVED" }}

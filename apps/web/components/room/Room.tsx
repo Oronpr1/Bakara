@@ -13,10 +13,10 @@ import { PeoplePanel } from "./PeoplePanel";
 import { Timeline } from "./Timeline";
 import { Toaster } from "./Toast";
 import { VersionsPanel } from "./VersionsPanel";
-import { Viewer, type MarkResult, type ReviewComment } from "./Viewer";
+import { PENDING_ID, reviewComments, useDraftMarks } from "./marks";
+import { Viewer, type MarkResult, type ViewerTool } from "./Viewer";
 
 type Tab = "comments" | "people" | "time" | "versions";
-const DRAFT_ID = "__draft__";
 
 function useIsDesktop() {
   const [desktop, setDesktop] = useState(true);
@@ -36,7 +36,7 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
   const [tab, setTab] = useState<Tab>("comments");
   const [viewing, setViewing] = useState(latest?.number ?? 0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawMode, setDrawMode] = useState(false);
+  const [tool, setTool] = useState<ViewerTool>("select");
   const [draft, setDraft] = useState<DraftMark | null>(null);
   const showResolved = false;
   const panelRef = useRef<HTMLElement>(null);
@@ -57,13 +57,8 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
   const numbers = useMemo(() => new Map(room.comments.map((c, i) => [c.id, i + 1])), [room.comments]);
   const ordered = useMemo(() => [...room.comments].sort((a, b) => (numbers.get(a.id) ?? 0) - (numbers.get(b.id) ?? 0)), [room.comments, numbers]);
 
-  const boxes: ReviewComment[] = useMemo(() => {
-    const list: ReviewComment[] = room.comments
-      .filter((c) => c.versionNumber === version?.number)
-      .map((c) => ({ id: c.id, page: c.page, x: c.x, y: c.y, width: c.width, height: c.height, status: c.status, label: String(numbers.get(c.id)) }));
-    if (draft && draft.anchor.versionNumber === version?.number) list.push({ ...draft.anchor, id: DRAFT_ID, status: "OPEN", label: "חדשה" });
-    return list;
-  }, [room.comments, numbers, draft, version?.number]);
+  const boxes = useMemo(() => reviewComments(room.comments, numbers, version?.number, draft), [room.comments, numbers, draft, version?.number]);
+  const { onUpdateDraft, onDelete } = useDraftMarks(room.id);
 
   function show(t: Tab) {
     setTab(t);
@@ -71,7 +66,7 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
   }
 
   function selectFromDoc(id: string) {
-    if (id === DRAFT_ID) return;
+    if (id === PENDING_ID) return;
     setSelectedId(id);
     setTab("comments");
     requestAnimationFrame(() => panelRef.current?.querySelector(`[data-comment="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
@@ -83,9 +78,9 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
     if (!isDesktop) requestAnimationFrame(() => document.getElementById("room-letter")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
-  function onDraw(result: MarkResult) {
+  function onCreate(result: MarkResult) {
     setDraft({ ...result, previewUrl: URL.createObjectURL(result.snapshot) });
-    setDrawMode(false);
+    setTool("select");
     setSelectedId(null);
     setTab("comments");
   }
@@ -146,10 +141,13 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
                 comments={boxes}
                 selectedId={selectedId}
                 onSelect={selectFromDoc}
+                onClearSelection={() => setSelectedId(null)}
                 canDraw={canComment}
-                drawMode={drawMode}
-                onDrawModeChange={setDrawMode}
-                onDraw={onDraw}
+                tool={tool}
+                onToolChange={setTool}
+                onCreate={onCreate}
+                onUpdateDraft={onUpdateDraft}
+                onDelete={onDelete}
                 showResolved={showResolved || Boolean(selectedId)}
               />
             </>
@@ -211,7 +209,7 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
                 draft={draft}
                 onDraftDone={() => setDraft(null)}
                 onStartMark={() => {
-                  setDrawMode(true);
+                  setTool("NOTE");
                   if (!isDesktop) document.getElementById("room-letter")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
                 can={{

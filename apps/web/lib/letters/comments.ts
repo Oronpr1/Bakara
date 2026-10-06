@@ -149,7 +149,8 @@ export async function updateDraftComment(
       const [version] = await tx.select({ pageCount: versions.pageCount }).from(versions).where(and(eq(versions.letterId, comment.letterId), eq(versions.number, versionNumber)));
       if (!version) throw notFound();
       validateAnchor(anchor, version.pageCount, l.row.latestVersion);
-      Object.assign(set, { page: anchor.page, x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.height });
+      // The picture of the old place no longer shows what the mark points at, so it is dropped.
+      Object.assign(set, { page: anchor.page, x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.height, snapshotKey: null });
     }
     if (points && comment.kind === "LINE") set.points = points;
     if (Object.keys(set).length === 0) return comment;

@@ -303,6 +303,11 @@ export async function updateDraftAction(input: { letterId: string; commentId: st
   );
 }
 
+/** Removes one of my draft marks; called by the viewer with plain data (the Delete key, the bin button). */
+export async function deleteDraftMarkAction(input: { letterId: string; commentId: string }): Promise<ActionResult> {
+  return runAction(z.object({ letterId, commentId: z.uuid() }), input, (actor, d) => deleteDraftComment(actor, d.commentId), paths);
+}
+
 export async function deleteDraftAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(z.object({ letterId, commentId: z.uuid() }), formObject(form), (actor, d) => deleteDraftComment(actor, d.commentId), paths, "הטיוטה נמחקה");
 }
