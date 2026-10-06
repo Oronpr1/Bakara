@@ -1,5 +1,6 @@
-// Sample data for trying the system: the business-administration tracks of Kampus Ono, with a
-// handful of letters at different stages. Safe to run once; it stops if the sample season exists.
+// Sample data for trying the system: the business-administration tracks of Kampus Ono (with a
+// handful of letters at different stages) and the haredi campuses. Safe to run once; it stops
+// if the sample season exists.
 //   tsx scripts/seed-demo.ts <tracks.xlsx> <letter1.docx> <letter1.pdf> <letter2.docx> <letter2.pdf>
 // The sample people have no password, so nobody can sign in as them.
 import { closeDb, getDb, schema } from "@al/db";
@@ -10,7 +11,7 @@ import { inviteAcademic } from "../lib/academic/service";
 import { importTracks, readTrackFile } from "../lib/import/service";
 import { createComment, setCommentStatus } from "../lib/letters/comments";
 import { approveLetter, createSeason, performTransition, uploadVersion } from "../lib/letters/service";
-import { setUnitDefaults } from "../lib/units/service";
+import { setCampusDefaults, setUnitDefaults } from "../lib/units/service";
 
 const [xlsx, docx1, pdf1, docx2, pdf2] = process.argv.slice(2);
 if (!xlsx || !docx1 || !pdf1 || !docx2 || !pdf2) {
@@ -20,6 +21,7 @@ if (!xlsx || !docx1 || !pdf1 || !docx2 || !pdf2) {
 const SEASON = 'דוגמה - תשפ"ז א\'';
 const CAMPUS = "קמפוס אונו";
 const FACULTY = "מנהל עסקים";
+const HAREDI = "קמפוסים חרדיים";
 const db = getDb();
 const { users, seasons, letterRequests } = schema;
 const bytes = (p: string) => new Uint8Array(readFileSync(p));
@@ -46,21 +48,26 @@ async function person(email: string, name: string, roles: Role[]): Promise<Actor
 const oron = await person("oron@ono.ac.il", "אורון", ["CONTROL_MANAGER", "ADMIN", "REGISTRATION_MANAGER"]);
 const yossi = await person("yosef.ehr@ono.ac.il", "יוסי ארנפויד", ["VP_REGISTRATION"]);
 const advisor = await person("demo-advisor@example.test", "שקד לוגסי (דמו)", ["CONTROL_ADVISOR"]);
+// Shuli holds both roles: control advisor of the haredi campuses and registration manager.
+const shuli = await person("demo-shuli@example.test", "שולי הלל (דמו)", ["CONTROL_ADVISOR", "REGISTRATION_MANAGER"]);
 const academic = await person("demo-academic@example.test", "ראש חוג לדוגמה (דמו)", ["ACADEMIC_APPROVER"]);
 
 const season = await createSeason(oron, { name: SEASON });
-const rows = (await readTrackFile("tracks.xlsx", Buffer.from(readFileSync(xlsx)))).filter(
-  (r) => r.campus === CAMPUS && r.faculty === FACULTY,
-);
-// Register the campus + faculty (the first row cannot be created yet), then say who is
-// responsible for it once.
-await importTracks(oron, season.id, [rows[0]!]);
+const all = await readTrackFile("tracks.xlsx", Buffer.from(readFileSync(xlsx)));
+const business = all.filter((r) => r.campus === CAMPUS && r.faculty === FACULTY);
+const haredi = all.filter((r) => r.campus === HAREDI);
+// Register the campuses + faculties (the first row of each cannot be created yet), then say who
+// is responsible for them once.
+await importTracks(oron, season.id, [business[0]!, haredi[0]!]);
 const unit = (await db.query.units.findFirst({
   where: and(eq(schema.units.campus, CAMPUS), eq(schema.units.faculty, FACULTY)),
 }))!;
 await setUnitDefaults(oron, unit.id, { registrationManagerId: oron.userId, advisorId: advisor.userId });
-const report = await importTracks(oron, season.id, rows);
-console.log(`Imported ${report.counts.created + report.counts.exists} tracks`);
+const harediCampus = (await db.query.campuses.findFirst({ where: eq(schema.campuses.name, HAREDI) }))!;
+await setCampusDefaults(oron, harediCampus.id, { registrationManagerId: shuli.userId, advisorId: shuli.userId });
+const report = await importTracks(oron, season.id, [...business, ...haredi]);
+console.log(`Imported ${report.counts.created + report.counts.exists} tracks (${report.counts.skipped} placeholder rows skipped, ${report.counts.error} with problems)`);
+for (const r of report.rows.filter((x) => x.status === "ERROR")) console.log(`  line ${r.line}: ${r.problem}`);
 
 const byCode = async (code: string) =>
   (await db.select().from(letterRequests).where(eq(letterRequests.seasonId, season.id))).find((l) => l.trackNumber === code)!;
