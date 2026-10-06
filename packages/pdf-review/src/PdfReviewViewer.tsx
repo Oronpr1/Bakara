@@ -532,6 +532,7 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
       return;
     }
     if (c.kind) setOpenId((o) => (o === c.id ? null : c.id));
+    setHoverId(null); // a click decides; hovering on opens it again only after the pointer leaves
     cb.current.onSelectComment?.(c.id);
   };
 

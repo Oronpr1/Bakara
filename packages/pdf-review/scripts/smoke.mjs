@@ -1,7 +1,8 @@
 // Headless check of the demo in a real Chromium, desktop (1280) and phone (390,
-// touch): boxes and stickers, draw by drag and by tap (mouse, touch), Escape,
-// the magnifier (sharp, magnified, follows mouse and finger), zoom, scroll and
-// page navigation.
+// touch): the original area boxes, the note / X / line tools (tap and drag,
+// mouse and touch), colours, editing and deleting a draft, published marks
+// staying read-only, the bottom zoom bar (±5%, typed %, fit width / page),
+// ctrl+wheel and pinch zoom, scrolling and page navigation.
 //
 // Uses the Playwright of the repository root (@playwright/test 1.63) and its
 // Chromium; never a user profile, and the keychain is mocked so macOS shows no
@@ -31,89 +32,37 @@ async function open(ctxOpts, query = "") {
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   await page.goto(url + query);
   await page.waitForSelector('.alpr-page[data-page="1"] canvas[data-rendered]', { timeout: 20_000 });
-  const shot = async (name) => shotsDir && page.screenshot({ path: `${shotsDir}/${name}.png` });
-  const results = () => page.evaluate(() => window.__drawResults);
-  const pageBox = (n) => page.locator(`.alpr-page[data-page="${n}"] .alpr-overlay`).boundingBox();
-  const scrollTo = (fn) => page.evaluate(fn);
-  return { ctx, page, errors, shot, results, pageBox, scrollTo };
-}
-
-/** Is the lens showing the same part of the page as the page's own bitmap, and is it sharper? */
-function lensQuality() {
-  const lens = document.querySelector(".alpr-lens");
-  const cv = lens.querySelector("canvas");
-  const lr = lens.getBoundingClientRect();
-  const cx = lr.left + lr.width / 2;
-  const cy = lr.top + lr.height / 2;
-  const pageEl = [...document.querySelectorAll(".alpr-page")].find((p) => {
-    const r = p.getBoundingClientRect();
-    return cy >= r.top && cy <= r.bottom;
-  });
-  const pr = pageEl.getBoundingClientRect();
-  const pc = pageEl.querySelector("canvas");
-  const power = Number(lens.dataset.power);
-  const k = pc.width / pr.width;
-  const side = lr.width / power; // page px shown
-  const src = { x: (cx - pr.left - side / 2) * k, y: (cy - pr.top - side / 2) * k, w: side * k, h: side * k };
-  const D = cv.width;
-  const read = (c, x, y, w, h) => c.getContext("2d").getImageData(x, y, w, h).data;
-  const energy = (d, w, h) => {
-    let e = 0;
-    for (let y = 1; y < h; y++)
-      for (let x = 1; x < w; x++) {
-        const i = (y * w + x) * 4;
-        const l = d[i] + d[i + 1] + d[i + 2];
-        e += Math.abs(l - (d[i - 4] + d[i - 3] + d[i - 2])) + Math.abs(l - (d[i - w * 4] + d[i - w * 4 + 1] + d[i - w * 4 + 2]));
-      }
-    return e / ((w - 1) * (h - 1));
+  const h = {
+    ctx,
+    page,
+    errors,
+    sc: page.locator(".alpr-scroller"),
+    shot: async (name) => shotsDir && page.screenshot({ path: `${shotsDir}/${name}.png` }),
+    events: () => page.evaluate(() => window.__events),
+    /** Wait for the n-th event (1-based) and return it. */
+    event: async (n) => {
+      await page.waitForFunction((k) => window.__events.length >= k, n, { timeout: 10_000 });
+      return (await page.evaluate(() => window.__events))[n - 1];
+    },
+    pageBox: (n) => page.locator(`.alpr-page[data-page="${n}"] .alpr-overlay`).boundingBox(),
+    tool: (name) => page.getByRole("toolbar", { name: "כלי סימון" }).getByRole("button", { name, exact: true }),
+    pressed: (loc) => loc.getAttribute("aria-pressed"),
+    zoomField: () => page.getByRole("textbox", { name: "אחוז הגדלה" }),
   };
-  // The page bitmap's crop, stretched to the lens: what a "zoomed screenshot" lens would show.
-  const stretched = document.createElement("canvas");
-  stretched.width = D;
-  stretched.height = D;
-  const sg = stretched.getContext("2d");
-  sg.fillStyle = "#fff";
-  sg.fillRect(0, 0, D, D);
-  sg.imageSmoothingQuality = "high";
-  sg.drawImage(pc, src.x, src.y, src.w, src.h, 0, 0, D, D);
-  // The lens, shrunk back to the page bitmap's scale: must match the page there.
-  const w = Math.max(1, Math.round(src.w));
-  const h = Math.max(1, Math.round(src.h));
-  const small = document.createElement("canvas");
-  small.width = w;
-  small.height = h;
-  const smg = small.getContext("2d");
-  smg.imageSmoothingQuality = "high";
-  smg.drawImage(cv, 0, 0, D, D, 0, 0, w, h);
-  const a = read(small, 0, 0, w, h);
-  const b = read(pc, Math.round(src.x), Math.round(src.y), w, h);
-  let diff = 0;
-  let ink = 0;
-  for (let i = 0; i < a.length; i += 4) {
-    diff += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
-    if (b[i] < 160) ink++;
-  }
-  return {
-    power,
-    sharp: lens.dataset.sharp,
-    lensEnergy: energy(read(cv, 0, 0, D, D), D, D),
-    stretchedEnergy: energy(read(stretched, 0, 0, D, D), D, D),
-    meanDiff: diff / (a.length / 4) / 3,
-    ink: ink / (a.length / 4),
-    lensPx: D,
-  };
+  return h;
 }
 
 try {
-  /* ================= desktop, box style (the original contract) ================= */
+  /* ================= desktop: area boxes, the original contract ================= */
   {
-    const { ctx, page, errors, results, pageBox } = await open({ viewport: { width: 1280, height: 900 }, hasTouch: true }, "?style=box");
+    const { ctx, page, errors, pageBox, tool } = await open({ viewport: { width: 1280, height: 900 }, hasTouch: true }, "?legacy=1");
+    const results = () => page.evaluate(() => window.__drawResults);
     assert.equal(await page.locator(".alpr-page").count(), 2, "two pages laid out");
-    assert.equal(await page.locator(".alpr-box").count(), 4, "all four demo comments drawn as boxes");
-    assert.equal(await page.locator(".alpr-box[data-draft]").count(), 1, "the draft is marked");
+    assert.equal(await page.locator(".alpr-box").count(), 4, "four area boxes");
+    assert.equal(await page.locator(".alpr-box[data-draft]").count(), 1, "the draft box is dashed");
 
     // Mouse: drag from bottom-right to top-left.
-    await page.getByRole("button", { name: "סימון אזור להערה" }).click();
+    await tool("פתק").click();
     const box = await pageBox(1);
     const at = (fx, fy) => [box.x + box.width * fx, box.y + box.height * fy];
     await page.mouse.move(...at(0.7, 0.4));
@@ -125,47 +74,41 @@ try {
     const [first] = await results();
     assert.equal(first.anchor.page, 1);
     assert.equal(first.anchor.versionNumber, 1);
-    for (const [k, v] of Object.entries({ x: 0.2, y: 0.3, width: 0.5, height: 0.1 }))
-      near(first.anchor[k], v, 0.01, `drag anchor.${k}`);
+    for (const [k, v] of Object.entries({ x: 0.2, y: 0.3, width: 0.5, height: 0.1 })) near(first.anchor[k], v, 0.01, `drag anchor.${k}`);
     assert.equal(first.snapshotType, "image/png");
     assert.ok(first.snapshotSize > 500, `non-empty PNG (${first.snapshotSize} bytes)`);
+    assert.equal(await tool("בחירה").getAttribute("aria-pressed"), "true", "back to select after a mark");
 
     // Escape cancels a drag in progress.
-    await page.mouse.move(...at(0.1, 0.6));
+    await tool("פתק").click();
+    await page.mouse.move(...at(0.1, 0.45));
     await page.mouse.down();
-    await page.mouse.move(...at(0.4, 0.7), { steps: 4 });
+    await page.mouse.move(...at(0.4, 0.55), { steps: 4 });
     assert.equal(await page.locator(".alpr-draft").count(), 1, "rubber band visible while dragging");
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await page.waitForTimeout(300);
-    assert.equal((await results()).length, 1, "Escape: no draw reported");
+    assert.equal((await results()).length, 1, "Escape: nothing reported");
     assert.equal(await page.locator(".alpr-draft").count(), 0);
 
-    // Touch drag (pointerType "touch"), top-left to bottom-right; draw mode is still on.
+    // Touch drag (pointerType "touch"); the tool is still on.
     const cdp = await page.context().newCDPSession(page);
-    const touch = (type, [x, y]) =>
-      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
-    await touch("touchStart", at(0.1, 0.6));
-    for (let i = 1; i <= 5; i++) await touch("touchMove", at(0.1 + 0.06 * i, 0.6 + 0.02 * i));
-    await touch("touchEnd", at(0.4, 0.7));
+    const touch = (type, [x, y]) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+    await touch("touchStart", at(0.1, 0.45));
+    for (let i = 1; i <= 5; i++) await touch("touchMove", at(0.1 + 0.06 * i, 0.45 + 0.02 * i));
+    await touch("touchEnd", at(0.4, 0.55));
     await page.waitForFunction(() => window.__drawResults.length === 2, null, { timeout: 10_000 });
     const second = (await results())[1];
     near(second.anchor.x, 0.1, 0.01, "touch anchor x");
     near(second.anchor.width, 0.3, 0.01, "touch anchor width");
 
-    // Escape with no drag leaves draw mode.
+    // Escape leaves a tool.
+    await tool("סימון X").click();
     await page.keyboard.press("Escape");
-    assert.equal(await page.getByRole("button", { name: "סימון אזור להערה" }).getAttribute("aria-pressed"), "false");
-
-    // Zoom in changes the page size by exactly one step.
-    const w0 = (await pageBox(1)).width;
-    await page.getByRole("button", { name: "הגדלה", exact: true }).click();
-    await page.waitForTimeout(100);
-    const w1 = (await pageBox(1)).width;
-    near(w1 / w0, 1.2, 0.02, "zoom in step");
+    assert.equal(await tool("בחירה").getAttribute("aria-pressed"), "true");
 
     // Selecting a page-2 comment scrolls it into view and the page renders.
-    await page.getByRole("button", { name: /הערה 3/ }).first().click();
+    await page.getByRole("complementary").getByRole("button", { name: /אזור 3/ }).click();
     await page.waitForSelector('.alpr-page[data-page="2"] canvas[data-rendered]', { timeout: 10_000 });
     await page.waitForFunction(
       () => {
@@ -176,146 +119,224 @@ try {
       null,
       { timeout: 5_000 },
     );
-    assert.deepEqual(errors, [], "box style: no page errors");
-    console.log("desktop · boxes, drag (mouse + touch), Escape, zoom, select: ok");
+    assert.deepEqual(errors, [], "boxes: no page errors");
+    console.log("desktop · area boxes, drag (mouse + touch), Escape, select: ok");
     await ctx.close();
   }
 
-  /* ================= desktop, sticker style ================= */
+  /* ================= desktop: marks, tools, editing, zoom ================= */
   {
-    const { ctx, page, errors, shot, results, pageBox } = await open({
-      viewport: { width: 1280, height: 900 },
-      deviceScaleFactor: 2,
-    });
-    const sc = page.locator(".alpr-scroller");
-    // Fit width by default: the page plus the margins is exactly the view.
+    const h = await open({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
+    const { page, errors, shot, event, events, pageBox, tool, sc, zoomField } = h;
     const fit = await page.evaluate(() => {
       const s = document.querySelector(".alpr-scroller");
       return { page: document.querySelector(".alpr-page").getBoundingClientRect().width, view: s.clientWidth, sw: s.scrollWidth };
     });
-    near(fit.page + 32, fit.view, 1, "fit width");
+    near(fit.page + 32, fit.view, 1, "fit width by default");
     assert.equal(fit.sw, fit.view, "no sideways scroll at fit width");
+    assert.equal(await page.getByRole("button", { name: "התאם לרוחב" }).getAttribute("aria-pressed"), "true");
 
-    assert.equal(await page.locator(".alpr-sticker").count(), 4, "four stickers");
-    assert.equal(await page.locator(".alpr-box").count(), 0, "no boxes in sticker style");
-    await shot("desk-stickers");
+    assert.equal(await page.locator(".alpr-mark").count(), 4, "four marks");
+    assert.equal(await page.locator(".alpr-sticker").count(), 2, "two notes");
+    assert.equal(await page.locator(".alpr-x").count(), 1, "one X");
+    assert.equal(await page.locator(".alpr-line").count(), 1, "one line");
+    const s1 = page.locator('[data-comment-id="c1"]');
+    assert.equal(await s1.evaluate((el) => getComputedStyle(el).color), "rgb(255, 255, 255)", "white number on a red note");
+    assert.equal(await page.locator('.alpr-mark[data-resolved] .alpr-badge-check').count(), 1, "closed X carries a check");
+    await shot("desk-marks");
 
-    const s1 = page.getByRole("button", { name: "הערה 1", exact: true });
-    // Hover previews…
+    // A note's preview: hover, click (selects), click again, Escape, a click on the page.
+    let box = await pageBox(1);
+    const empty = [box.x + box.width * 0.12, box.y + box.height * 0.12];
     await s1.hover();
     await page.waitForSelector(".alpr-preview", { timeout: 2_000 });
     assert.match(await page.locator(".alpr-preview").innerText(), /מדעי המחשב/);
-    await shot("desk-sticker-hover");
-    await page.mouse.move(640, 880);
+    await shot("desk-note-hover");
+    await page.mouse.move(...empty);
     await page.waitForSelector(".alpr-preview", { state: "detached", timeout: 2_000 });
-    // …a click opens it and selects, a second click closes it, Escape too.
     await s1.click();
     assert.equal(await s1.getAttribute("aria-expanded"), "true");
     assert.equal(await s1.getAttribute("aria-pressed"), "true", "selected");
-    await page.mouse.move(640, 880);
+    await page.mouse.move(...empty);
     assert.equal(await page.locator(".alpr-preview").count(), 1, "stays open after the mouse leaves");
     await s1.click();
     assert.equal(await s1.getAttribute("aria-expanded"), "false", "second click closes");
     await s1.click();
     await page.keyboard.press("Escape");
     assert.equal(await s1.getAttribute("aria-expanded"), "false", "Escape closes");
+    await page.mouse.click(...empty);
+    assert.equal((await events()).at(-1)?.type, "clear", "a click on the page clears the selection");
+    assert.equal(await s1.getAttribute("aria-pressed"), "false");
+
+    // A published mark is read-only: no handles, the palette and a drag change nothing.
     await s1.click();
-    const b1 = await pageBox(1);
-    await page.mouse.click(b1.x + b1.width * 0.5, b1.y + 40);
-    assert.equal(await s1.getAttribute("aria-expanded"), "false", "a click on the page closes");
-    // States: resolved = green + check, draft = dashed.
-    assert.equal(await page.locator('.alpr-note[data-resolved] .alpr-sticker-check').count(), 1);
-    assert.equal(await page.locator(".alpr-note[data-draft]").count(), 1);
+    assert.equal(await page.locator(".alpr-handle").count(), 0, "no handles on a published mark");
+    await page.getByRole("radio", { name: "כחול" }).click();
+    const sb = await s1.boundingBox();
+    await page.mouse.move(sb.x + 14, sb.y + 14);
+    await page.mouse.down();
+    await page.mouse.move(sb.x + 90, sb.y + 60, { steps: 5 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    assert.equal((await events()).filter((e) => e.type === "update").length, 0, "published: no edits");
+    await page.getByRole("radio", { name: "אדום" }).click();
+    await page.mouse.click(...empty);
+    let n = (await events()).length;
 
-    // Tap-to-place: one click in draw mode marks the default area around it.
-    await sc.evaluate((el) => (el.scrollTop = 0));
-    await page.getByRole("button", { name: "סימון אזור להערה" }).click();
-    assert.equal(await page.locator(".alpr-modebar").count(), 1, "mode bar explains draw mode");
-    let box = await pageBox(1);
+    // Note by a tap; then the new draft is selected with handles, in the chosen colour.
+    await tool("פתק").click();
+    assert.match(await page.locator(".alpr-hint").innerText(), /פתק/);
+    box = await pageBox(1);
     await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.42);
-    await page.waitForFunction(() => window.__drawResults.length === 1, null, { timeout: 10_000 });
-    let a = (await results())[0].anchor;
-    near(a.width, 0.28, 0.001, "tap width");
-    near(a.height, 0.045, 0.001, "tap height");
-    near(a.x + a.width / 2, 0.5, 0.002, "tap centre x");
-    near(a.y + a.height / 2, 0.42, 0.002, "tap centre y");
-    // …at a corner it is shifted onto the page, not shrunk.
-    box = await pageBox(1);
-    await page.mouse.click(box.x + box.width * 0.995, box.y + 2);
-    await page.waitForFunction(() => window.__drawResults.length === 2, null, { timeout: 10_000 });
-    a = (await results())[1].anchor;
-    near(a.x + a.width, 1, 0.001, "corner tap right edge");
-    near(a.y, 0, 0.001, "corner tap top");
-    near(a.width, 0.28, 0.001, "corner tap keeps its width");
-    // A drag still draws a rectangle; a thin stroke along a line gets a line's height.
-    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.3);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.36, { steps: 6 });
-    await page.mouse.up();
-    await page.waitForFunction(() => window.__drawResults.length === 3, null, { timeout: 10_000 });
-    a = (await results())[2].anchor;
-    near(a.x, 0.2, 0.01, "drag x");
-    near(a.height, 0.06, 0.01, "drag height");
-    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.5 + 2, { steps: 6 });
-    await page.mouse.up();
-    await page.waitForFunction(() => window.__drawResults.length === 4, null, { timeout: 10_000 });
-    a = (await results())[3].anchor;
-    near(a.width, 0.35, 0.01, "stroke width");
-    near(a.height, 0.045, 0.002, "stroke gets a line's height");
-    await shot("desk-draw");
-    await page.getByRole("button", { name: "סיום" }).click();
-    assert.equal(await page.getByRole("button", { name: "סימון אזור להערה" }).getAttribute("aria-pressed"), "false");
-    assert.equal(await page.locator(".alpr-sticker").count(), 8, "four new draft stickers");
+    let ev = await event(++n);
+    assert.equal(ev.type, "create");
+    assert.equal(ev.kind, "NOTE");
+    assert.equal(ev.color, "#d92d20");
+    near(ev.anchor.width, 0.28, 0.001, "tap width");
+    near(ev.anchor.height, 0.045, 0.001, "tap height");
+    near(ev.anchor.x + ev.anchor.width / 2, 0.5, 0.002, "tap centre x");
+    near(ev.anchor.y + ev.anchor.height / 2, 0.42, 0.002, "tap centre y");
+    assert.ok(ev.snapshotSize > 500 && ev.snapshotType === "image/png", "snapshot");
+    assert.equal(await tool("בחירה").getAttribute("aria-pressed"), "true", "back to select");
+    await page.waitForSelector(".alpr-mark[data-selected][data-draft]");
+    assert.equal(await page.locator(".alpr-handle").count(), 4, "four resize handles");
+    const created = ev.anchor;
 
-    // Magnifier.
-    const magBtn = page.getByRole("button", { name: "זכוכית מגדלת", exact: true });
-    await magBtn.click();
-    assert.equal(await magBtn.getAttribute("aria-pressed"), "true");
-    // Bring page 1's fine print (7pt, ~89% down the page) to the middle of the view.
-    await sc.evaluate((el) => {
-      const p = document.querySelector('.alpr-page[data-page="1"]');
-      el.scrollTop = p.offsetTop + p.offsetHeight * 0.887 - el.clientHeight / 2;
-    });
-    await page.waitForTimeout(300);
+    // Recolour the selected draft.
+    await page.getByRole("radio", { name: "כחול" }).click();
+    ev = await event(++n);
+    assert.deepEqual(ev.patch, { color: "#2563eb" });
+    const draftId = ev.id;
+    await page.waitForFunction(
+      () => document.querySelector(".alpr-mark[data-selected]")?.style.getPropertyValue("--mark") === "#2563eb",
+    );
+
+    // Move it by dragging its area.
+    const area = await page.locator(".alpr-mark[data-selected] .alpr-note-area").boundingBox();
     box = await pageBox(1);
-    const mx = box.x + box.width * 0.62;
-    const my = box.y + box.height * 0.8875;
-    await page.mouse.move(mx - 40, my - 30);
-    await page.mouse.move(mx, my, { steps: 4 });
-    await page.waitForSelector(".alpr-lens:not([hidden])", { timeout: 2_000 });
-    await page.waitForSelector('.alpr-lens[data-sharp="true"]', { timeout: 5_000 });
-    const lb = await page.locator(".alpr-lens").boundingBox();
-    near(lb.x + lb.width / 2, mx, 1.5, "lens centred on the mouse (x)");
-    near(lb.y + lb.height / 2, my, 1.5, "lens centred on the mouse (y)");
-    near(lb.width, 160, 0.5, "lens size");
-    let q = await page.evaluate(lensQuality);
-    console.log("lens at ×2.5:", q);
-    assert.equal(q.power, 2.5);
-    assert.ok(q.ink > 0.02, "the lens is over text");
-    assert.ok(q.meanDiff < 18, `lens shows the right spot (mean diff ${q.meanDiff.toFixed(1)})`);
-    assert.ok(q.lensEnergy > q.stretchedEnergy * 1.25, "lens is sharper than stretched pixels");
-    await shot("desk-lens");
-    // Alt+wheel and the +/- buttons set the power.
-    await page.keyboard.down("Alt");
-    await page.mouse.wheel(0, -120);
-    await page.keyboard.up("Alt");
-    await page.waitForFunction(() => document.querySelector(".alpr-modebar-power")?.textContent === "×3");
-    await page.getByRole("button", { name: "יותר הגדלה בזכוכית" }).click();
-    await page.waitForFunction(() => document.querySelector(".alpr-modebar-power")?.textContent === "×3.5");
-    await page.mouse.move(mx, my, { steps: 2 });
-    await page.waitForSelector('.alpr-lens[data-sharp="true"][data-power="3.5"]', { timeout: 5_000 });
-    q = await page.evaluate(lensQuality);
-    assert.ok(q.meanDiff < 18 && q.lensEnergy > q.stretchedEnergy * 1.25, `×3.5 sharp and in place ${JSON.stringify(q)}`);
-    await shot("desk-lens-35");
-    // A plain wheel still scrolls, and the lens follows the content.
-    const top0 = await sc.evaluate((el) => el.scrollTop);
-    await page.mouse.wheel(0, 300);
+    await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.width / 2 - 80, area.y + area.height / 2 + 40, { steps: 6 });
+    await page.mouse.up();
+    ev = await event(++n);
+    assert.equal(ev.type, "update");
+    assert.equal(ev.id, draftId);
+    near(ev.patch.anchor.x, created.x - 80 / box.width, 0.002, "moved x");
+    near(ev.patch.anchor.y, created.y + 40 / box.height, 0.002, "moved y");
+    near(ev.patch.anchor.width, created.width, 1e-4, "same width");
+    assert.equal(ev.patch.anchor.versionNumber, 1);
+    const moved = ev.patch.anchor;
+
+    // Resize it from its bottom-right corner.
+    const se = await page.locator('.alpr-handle[data-grip="se"]').boundingBox();
+    await page.mouse.move(se.x + se.width / 2, se.y + se.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(se.x + se.width / 2 + 60, se.y + se.height / 2 + 30, { steps: 5 });
+    await page.mouse.up();
+    ev = await event(++n);
+    near(ev.patch.anchor.x, moved.x, 1e-4, "resize keeps the far corner");
+    near(ev.patch.anchor.width, moved.width + 60 / box.width, 0.002, "resized width");
+    near(ev.patch.anchor.height, moved.height + 30 / box.height, 0.002, "resized height");
+    await shot("desk-edit");
+
+    // Delete it with the Delete key.
+    await page.keyboard.press("Delete");
+    ev = await event(++n);
+    assert.deepEqual(ev, { type: "delete", id: draftId });
+    await page.waitForFunction(() => document.querySelectorAll(".alpr-mark").length === 4);
+
+    // X by a drag, deleted with the toolbar button; X by a tap (lower on the page: scroll there).
+    await sc.evaluate((el) => (el.scrollTop = 500));
+    await page.waitForTimeout(250);
+    box = await pageBox(1);
+    await tool("סימון X").click();
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.6);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.65, { steps: 6 });
+    await page.mouse.up();
+    ev = await event(++n);
+    assert.equal(ev.kind, "X");
+    for (const [k, v] of Object.entries({ x: 0.2, y: 0.6, width: 0.25, height: 0.05 })) near(ev.anchor[k], v, 0.003, `X anchor.${k}`);
+    await page.getByRole("button", { name: "מחיקת הסימון" }).click();
+    ev = await event(++n);
+    assert.equal(ev.type, "delete");
+    await tool("סימון X").click();
+    await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.7);
+    ev = await event(++n);
+    assert.equal(ev.kind, "X");
+    near(ev.anchor.width, 0.28, 0.001, "X tap width");
+
+    // Line: a tap draws nothing; a nearly level drag draws a level line.
+    await tool("קו").click();
+    await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.75);
+    await page.waitForTimeout(400);
+    assert.equal((await events()).length, n, "a tap with the line tool draws nothing");
+    assert.equal(await tool("קו").getAttribute("aria-pressed"), "true", "line tool still on");
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.8);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.8 + 6, { steps: 8 });
+    await page.mouse.up();
+    ev = await event(++n);
+    assert.equal(ev.kind, "LINE");
+    assert.equal(ev.points.length, 2);
+    near(ev.points[0].x, 0.2, 0.002, "line start x");
+    near(ev.points[1].x, 0.6, 0.002, "line end x");
+    assert.equal(ev.points[1].y, ev.points[0].y, "nearly level line straightened");
+    assert.equal(ev.anchor.height, 0, "a level line's box has no height");
+    await page.waitForSelector(".alpr-mark[data-selected][data-kind='LINE']");
+    assert.equal(await page.locator(".alpr-handle").count(), 2, "two end handles");
+    // Move its end, then the whole line.
+    const end = await page.locator('.alpr-handle[data-grip="1"]').boundingBox();
+    await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.7, { steps: 6 });
+    await page.mouse.up();
+    ev = await event(++n);
+    near(ev.patch.points[1].x, 0.7, 0.003, "end moved x");
+    near(ev.patch.points[1].y, 0.7, 0.003, "end moved y");
+    near(ev.patch.points[0].x, 0.2, 0.002, "start stays");
+    near(ev.patch.anchor.height, 0.1, 0.004, "box follows the line");
+    const lineBox = await page.locator(".alpr-mark[data-selected] .alpr-line").boundingBox();
+    await page.mouse.move(lineBox.x + lineBox.width / 2, lineBox.y + lineBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(lineBox.x + lineBox.width / 2, lineBox.y + lineBox.height / 2 - 30, { steps: 5 });
+    await page.mouse.up();
+    ev = await event(++n);
+    near(ev.patch.points[0].y - 0.8, -30 / box.height, 0.003, "whole line moved");
+    await shot("desk-line");
+
+    // Zoom bar: ±5%, typed %, fit page, fit width.
+    const zf = zoomField();
+    const z0 = parseInt(await zf.inputValue());
+    await page.getByRole("button", { name: "הגדלה", exact: true }).click();
+    assert.equal(await zf.inputValue(), `${(Math.floor(z0 / 5) + 1) * 5}%`, "+ goes to the next 5%");
+    await page.getByRole("button", { name: "הקטנה", exact: true }).click();
+    await page.getByRole("button", { name: "הקטנה", exact: true }).click();
+    assert.equal(await zf.inputValue(), `${(Math.floor(z0 / 5) - 1) * 5}%`, "− steps 5% at a time");
+    assert.equal(await page.getByRole("button", { name: "התאם לרוחב" }).getAttribute("aria-pressed"), "false");
+    await zf.click();
+    await zf.fill("150");
+    await zf.press("Enter");
+    assert.equal(await zf.inputValue(), "150%");
+    near((await pageBox(1)).width, (595.28 * 96) / 72 * 1.5, 1, "typed 150%");
+    await page.getByRole("button", { name: "התאם לעמוד" }).click();
     await page.waitForTimeout(300);
-    assert.ok((await sc.evaluate((el) => el.scrollTop)) > top0 + 100, "wheel scrolls in magnifier mode");
-    assert.equal(await page.locator(".alpr-lens:not([hidden])").count(), 1, "lens still up");
-    // Ctrl+wheel zooms the document around the mouse.
+    const fp = await page.evaluate(() => ({
+      h: document.querySelector(".alpr-page").getBoundingClientRect().height,
+      view: document.querySelector(".alpr-scroller").clientHeight,
+    }));
+    near(fp.h + 32, fp.view, 1.5, "fit page: a whole page in view");
+    await shot("desk-fit-page");
+    await page.getByRole("button", { name: "התאם לרוחב" }).click();
+    await page.waitForTimeout(300);
+    near((await pageBox(1)).width + 32, fit.view, 1, "fit width again");
+
+    // Ctrl+wheel zooms around the mouse.
+    await sc.evaluate((el) => (el.scrollTop = 300));
+    await page.waitForTimeout(200);
+    box = await pageBox(1);
+    const mx = box.x + box.width * 0.6;
+    const my = box.y + 500;
     const under = () =>
       page.evaluate(([x, y]) => {
         for (const p of document.querySelectorAll(".alpr-page")) {
@@ -324,6 +345,7 @@ try {
         }
         return null;
       }, [mx, my]);
+    await page.mouse.move(mx, my);
     const u0 = await under();
     await page.keyboard.down("Control");
     await page.mouse.wheel(0, -200);
@@ -331,129 +353,127 @@ try {
     await page.waitForTimeout(400);
     const u1 = await under();
     assert.equal(u1.page, u0.page);
-    near(u1.fx, u0.fx, 0.003, "zoom keeps the point under the mouse (x)");
-    near(u1.fy, u0.fy, 0.003, "zoom keeps the point under the mouse (y)");
-    await page.waitForSelector('.alpr-lens[data-sharp="true"]', { timeout: 5_000 });
-    // Escape leaves the mode; the lens goes.
-    await page.keyboard.press("Escape");
-    assert.equal(await magBtn.getAttribute("aria-pressed"), "false");
-    assert.equal(await page.locator(".alpr-lens").count(), 0);
+    near(u1.fx, u0.fx, 0.003, "ctrl+wheel keeps the point under the mouse (x)");
+    near(u1.fy, u0.fy, 0.003, "ctrl+wheel keeps the point under the mouse (y)");
+    assert.ok(parseInt(await zf.inputValue()) > Math.round((fit.view - 32) / 7.937), "ctrl+wheel zoomed in");
 
-    // Page navigation, and the floating "1 / 2".
-    await page.getByRole("button", { name: "התאמה לרוחב" }).click();
+    // Page navigation and the floating "1 / 2".
+    await page.getByRole("button", { name: "התאם לרוחב" }).click();
     await sc.evaluate((el) => (el.scrollTop = 0));
     await page.waitForTimeout(200);
     await page.getByRole("button", { name: "עמוד הבא" }).click();
     await page.waitForSelector(".alpr-pill[data-visible]", { timeout: 2_000 });
-    await page.waitForFunction(() => document.querySelector(".alpr-page-input")?.value === "2", null, { timeout: 3_000 });
+    await page.waitForFunction(() => document.querySelector(".alpr-page-now")?.textContent?.includes("2 / 2"), null, { timeout: 3_000 });
     assert.equal(await page.getByRole("button", { name: "עמוד הבא" }).isDisabled(), true, "no page after the last");
     await shot("desk-page2");
     await page.getByRole("button", { name: "עמוד קודם" }).click();
-    await page.waitForFunction(() => document.querySelector(".alpr-page-input")?.value === "1", null, { timeout: 3_000 });
+    await page.waitForFunction(() => document.querySelector(".alpr-page-now")?.textContent?.includes("1 / 2"), null, { timeout: 3_000 });
 
-    assert.deepEqual(errors, [], "sticker style: no page errors");
-    console.log("desktop · stickers, tap/drag/stroke, magnifier, ctrl+wheel, navigation: ok");
-    await ctx.close();
+    assert.deepEqual(errors, [], "marks: no page errors");
+    console.log("desktop · notes, X, lines, colours, edit/move/resize/delete, read-only published, zoom bar, ctrl+wheel, pages: ok");
+    await h.ctx.close();
   }
 
   /* ================= phone, touch ================= */
   {
-    const { ctx, page, errors, shot, results, pageBox } = await open({
-      viewport: { width: 390, height: 844 },
-      hasTouch: true,
-      isMobile: true,
-      deviceScaleFactor: 3,
-    });
-    const sc = page.locator(".alpr-scroller");
+    const h = await open({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
+    const { page, errors, shot, event, events, pageBox, tool, sc, zoomField } = h;
     const cdp = await page.context().newCDPSession(page);
     const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map(([x, y], id) => ({ x, y, id })) });
+    const drag = async (from, to, steps = 6) => {
+      await touch("touchStart", [from]);
+      for (let i = 1; i <= steps; i++)
+        await touch("touchMove", [[from[0] + ((to[0] - from[0]) * i) / steps, from[1] + ((to[1] - from[1]) * i) / steps]]);
+      await touch("touchEnd", []);
+    };
 
     const geo = await page.evaluate(() => {
       const s = document.querySelector(".alpr-scroller");
       return {
         docOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         toolbar: document.querySelector(".alpr-toolbar").getBoundingClientRect().height,
+        zoombar: document.querySelector(".alpr-zoombar").getBoundingClientRect().height,
         page: document.querySelector(".alpr-page").getBoundingClientRect().width,
         view: s.clientWidth,
         sw: s.scrollWidth,
-        btn: document.querySelector(".alpr-btn").getBoundingClientRect().height,
+        minBtn: Math.min(...[...document.querySelectorAll(".alpr-btn")].filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect().height)),
       };
     });
     assert.equal(geo.docOverflow, 0, "no sideways overflow");
-    assert.ok(geo.toolbar <= 56, `one-row toolbar (${geo.toolbar}px)`);
-    assert.ok(geo.btn >= 44, `44px touch targets (${geo.btn}px)`);
+    assert.ok(geo.toolbar <= 56, `one-row tool bar (${geo.toolbar}px)`);
+    assert.ok(geo.zoombar <= 60, `one-row zoom bar (${geo.zoombar}px)`);
+    assert.ok(geo.minBtn >= 44, `44px touch targets (${geo.minBtn}px)`);
     near(geo.page + 16, geo.view, 1, "fit width on a phone");
     assert.equal(geo.sw, geo.view, "no sideways scroll");
-    assert.equal(await page.locator(".alpr-page-now").innerText(), "עמוד 1 / 2");
-    await shot("phone-stickers");
+    await shot("phone-marks");
 
-    // Tap a sticker: it opens; tap the page: it closes.
+    // Palette behind one button.
+    await page.getByRole("button", { name: /^צבע:/ }).tap();
+    assert.ok(await page.locator(".alpr-palette").isVisible(), "palette opens");
+    await shot("phone-palette");
+    await page.getByRole("radio", { name: "ירוק" }).tap();
+    assert.ok(!(await page.locator(".alpr-palette").isVisible()), "palette closes");
+    assert.equal(await page.getByRole("button", { name: /^צבע:/ }).getAttribute("aria-label"), "צבע: ירוק");
+
+    // Tap a published note: it opens; tap the page: it closes and clears.
     const s1 = page.locator('[data-comment-id="c1"]');
     await s1.tap();
     assert.equal(await s1.getAttribute("aria-expanded"), "true");
-    await shot("phone-sticker-open");
+    await shot("phone-note-open");
     let box = await pageBox(1);
-    await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.08);
+    await page.touchscreen.tap(box.x + box.width * 0.12, box.y + box.height * 0.1);
     assert.equal(await s1.getAttribute("aria-expanded"), "false");
+    assert.equal((await events()).at(-1)?.type, "clear");
 
-    // Draw: a tap places the default area, a drag draws one.
-    await page.getByRole("button", { name: "סימון אזור להערה" }).tap();
+    // A swipe that starts on a mark still scrolls the letter.
+    const sb = await s1.boundingBox();
+    const t0 = await sc.evaluate((el) => el.scrollTop);
+    await drag([sb.x + 10, sb.y + 10], [sb.x + 10, sb.y - 190], 8);
+    await page.waitForTimeout(400);
+    const t1 = await sc.evaluate((el) => el.scrollTop);
+    assert.ok(t1 > t0 + 50, `swipe on a mark scrolls (${t0} -> ${t1})`);
+    await sc.evaluate((el) => (el.scrollTop = 0));
+    await page.waitForTimeout(200);
+    let n = (await events()).length;
+
+    // Note by a tap, in green; it comes back selected and can be dragged with a finger.
+    await tool("פתק").tap();
     box = await pageBox(1);
     await page.touchscreen.tap(box.x + box.width * 0.5, box.y + box.height * 0.4);
-    await page.waitForFunction(() => window.__drawResults.length === 1, null, { timeout: 10_000 });
-    let a = (await results())[0].anchor;
-    near(a.width, 0.28, 0.001, "phone tap width");
-    near(a.y + a.height / 2, 0.4, 0.003, "phone tap centre y");
-    const pt = (fx, fy) => [box.x + box.width * fx, box.y + box.height * fy];
-    await touch("touchStart", [pt(0.2, 0.5)]);
-    for (let i = 1; i <= 6; i++) await touch("touchMove", [pt(0.2 + 0.08 * i, 0.5 + 0.01 * i)]);
-    await touch("touchEnd", []);
-    await page.waitForFunction(() => window.__drawResults.length === 2, null, { timeout: 10_000 });
-    a = (await results())[1].anchor;
-    near(a.width, 0.48, 0.01, "phone drag width");
-    await shot("phone-draw");
-    await page.getByRole("button", { name: "סיום" }).tap();
-
-    // Magnifier: hold, then drag; the lens floats above the finger; the page does not scroll.
-    await page.getByRole("button", { name: "זכוכית מגדלת", exact: true }).tap();
-    await sc.evaluate((el) => {
-      const p = document.querySelector('.alpr-page[data-page="1"]');
-      el.scrollTop = p.offsetTop + p.offsetHeight * 0.887 - el.clientHeight / 2;
-    });
-    await page.waitForTimeout(300);
-    box = await pageBox(1);
-    const fx = box.x + box.width * 0.6;
-    const fy = box.y + box.height * 0.8875;
+    let ev = await event(++n);
+    assert.equal(ev.kind, "NOTE");
+    assert.equal(ev.color, "#16a34a");
+    near(ev.anchor.y + ev.anchor.height / 2, 0.4, 0.003, "phone tap centre y");
+    await page.waitForSelector(".alpr-mark[data-selected][data-draft] .alpr-sticker");
+    const created = ev.anchor;
+    const st = await page.locator(".alpr-mark[data-selected] .alpr-sticker").boundingBox();
     const top0 = await sc.evaluate((el) => el.scrollTop);
-    await touch("touchStart", [[fx, fy]]);
-    await page.waitForTimeout(450);
-    for (let i = 1; i <= 5; i++) await touch("touchMove", [[fx - 6 * i, fy]]);
-    await page.waitForSelector(".alpr-lens:not([hidden])", { timeout: 2_000 });
-    await page.waitForSelector('.alpr-lens[data-sharp="true"]', { timeout: 5_000 });
-    const lb = await page.locator(".alpr-lens").boundingBox();
-    assert.ok(lb.y + lb.height < fy, "lens is above the finger");
-    near(lb.x + lb.width / 2, fx - 30, 1.5, "lens follows the finger");
-    assert.equal(await sc.evaluate((el) => el.scrollTop), top0, "no scroll while magnifying");
-    const q = await page.evaluate(lensQuality);
-    console.log("phone lens:", q);
-    assert.ok(q.lensEnergy > q.stretchedEnergy * 1.25, "phone lens sharper than stretched pixels");
-    await shot("phone-lens");
-    await touch("touchEnd", []);
-    await page.waitForSelector(".alpr-lens", { state: "hidden", timeout: 2_000 });
+    await drag([st.x + 14, st.y + 14], [st.x + 14 - 40, st.y + 14 + 30]);
+    ev = await event(++n);
+    assert.equal(ev.type, "update", JSON.stringify(ev));
+    near(ev.patch.anchor.x, created.x - 40 / box.width, 0.004, `finger moved the note x ${JSON.stringify({ created, ev })}`);
+    near(ev.patch.anchor.y, created.y + 30 / box.height, 0.004, "finger moved the note y");
+    assert.equal(await sc.evaluate((el) => el.scrollTop), top0, "dragging a mark does not scroll");
+    await shot("phone-edit");
 
-    // A quick swipe in magnifier mode still scrolls, and shows no lens.
-    const t1 = await sc.evaluate((el) => el.scrollTop);
-    await touch("touchStart", [[200, 500]]);
-    for (let i = 1; i <= 8; i++) await touch("touchMove", [[200, 500 + 30 * i]]);
-    await touch("touchEnd", []);
-    await page.waitForTimeout(500);
-    const t2 = await sc.evaluate((el) => el.scrollTop);
-    assert.ok(t2 < t1 - 50, `swipe scrolls (${t1} -> ${t2})`);
-    assert.equal(await page.locator(".alpr-lens:not([hidden])").count(), 0, "no lens on a swipe");
-    await page.getByRole("button", { name: "סגירת הזכוכית המגדלת" }).tap();
+    // X by a tap, line by a drag.
+    await tool("סימון X").tap();
+    await page.touchscreen.tap(box.x + box.width * 0.4, box.y + box.height * 0.6);
+    ev = await event(++n);
+    assert.equal(ev.kind, "X");
+    await tool("קו").tap();
+    await drag([box.x + box.width * 0.15, box.y + box.height * 0.7], [box.x + box.width * 0.75, box.y + box.height * 0.7 + 3], 8);
+    ev = await event(++n);
+    assert.equal(ev.kind, "LINE");
+    assert.equal(ev.points[0].y, ev.points[1].y, "level line by finger");
+    await shot("phone-line");
 
-    // Pinch zooms.
-    const z0 = await page.locator(".alpr-zoom").textContent();
+    // Zoom: the + button, then a pinch.
+    const zf = zoomField();
+    const z0 = parseInt(await zf.inputValue());
+    await page.getByRole("button", { name: "הגדלה", exact: true }).tap();
+    assert.equal(await zf.inputValue(), `${(Math.floor(z0 / 5) + 1) * 5}%`);
+    const z1 = parseInt(await zf.inputValue());
     await touch("touchStart", [
       [150, 400],
       [240, 400],
@@ -465,13 +485,16 @@ try {
       ]);
     await touch("touchEnd", []);
     await page.waitForTimeout(400);
-    const z1 = await page.locator(".alpr-zoom").textContent();
-    assert.ok(parseInt(z1) > parseInt(z0) * 1.5, `pinch zooms in (${z0} -> ${z1})`);
+    const z2 = parseInt(await zf.inputValue());
+    assert.ok(z2 > z1 * 1.5, `pinch zooms in (${z1}% -> ${z2}%)`);
     await shot("phone-pinch");
+    await page.getByRole("button", { name: "התאם לרוחב" }).tap();
+    await page.waitForTimeout(300);
+    near((await pageBox(1)).width + 16, geo.view, 1, "fit width again");
 
     assert.deepEqual(errors, [], "phone: no page errors");
-    console.log("phone · stickers, tap/drag, magnifier hold+drag, swipe, pinch: ok");
-    await ctx.close();
+    console.log("phone · palette, notes open/close, swipe on a mark scrolls, tap note, finger drag, X, line, ±5%, pinch: ok");
+    await h.ctx.close();
   }
   console.log("smoke test passed");
 } finally {

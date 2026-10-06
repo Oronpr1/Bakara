@@ -24,7 +24,7 @@ const params = new URLSearchParams(location.search);
 const MARKS: DemoComment[] = [
   { id: "c1", page: 1, kind: "NOTE", color: "#d92d20", x: 0.36, y: 0.255, width: 0.53, height: 0.035, status: "OPEN",
     label: "שם החוג צריך להיות כמו בידיעון: \"מדעי המחשב\" ולא \"החוג למדעי המחשב\"." },
-  { id: "c2", page: 1, kind: "X", color: "#2563eb", x: 0.62, y: 0.535, width: 0.27, height: 0.032, status: "RESOLVED_FIXED",
+  { id: "c2", page: 1, kind: "X", color: "#2563eb", x: 0.69, y: 0.457, width: 0.21, height: 0.032, status: "RESOLVED_FIXED",
     label: "תוקן: \"היקף\" במקום \"משך\"." },
   { id: "c3", page: 2, kind: "LINE", color: "#16a34a", x: 0.25, y: 0.205, width: 0.64, height: 0, status: "OPEN",
     points: [{ x: 0.89, y: 0.205 }, { x: 0.25, y: 0.205 }], label: "להוסיף את המועד האחרון להשלמת המכינה." },

@@ -346,7 +346,6 @@
   padding: 0;
   border: 0;
   background: none;
-  color: inherit;
   font: inherit;
 }
 
@@ -365,7 +364,9 @@
 .alpr-mark[data-selected] .alpr-note-area {
   background: var(--mark-strong);
 }
-.alpr-sticker {
+.alpr-mark .alpr-sticker {
+  /* above the area's corner handles, whose large touch targets reach it */
+  z-index: 2;
   color: var(--mark-ink);
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.14));
   transition: transform 0.12s;
@@ -503,6 +504,18 @@
 .alpr-badge-corner {
   top: -9px;
   right: -9px;
+}
+/* a closed mark's badge: the number and a check, side by side */
+.alpr-badge .alpr-badge-check {
+  position: static;
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-inline-start: 2px;
+  padding: 0;
+  vertical-align: -1px;
+  background: none;
+  color: currentColor;
 }
 .alpr-mark[data-draft] .alpr-badge {
   outline: 1.5px dashed var(--mark-ink);
