@@ -26,7 +26,7 @@ export const TILE_TONES: Record<Tone, { top: string; ring: string; text: string;
 
 /** "מכתב אחד", "3 מכתבים". */
 export const letters = (n: number) => (n === 1 ? "מכתב אחד" : `${n} מכתבים`);
-/** "יום אחד", "6 ימים", "היום". */
-export const days = (n: number) => (n === 0 ? "מהיום" : n === 1 ? "יום אחד" : `${n} ימים`);
+/** "יום אחד", "6 ימים", "היום" (as in "הכי ותיק: היום"). */
+export const days = (n: number) => (n === 0 ? "היום" : n === 1 ? "יום אחד" : `${n} ימים`);
 /** From this many days a wait is shown in red (as in the shared Holder chip). */
 export const LATE_DAYS = 5;

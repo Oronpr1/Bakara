@@ -130,12 +130,12 @@ export function personalGroups(p: Persona): Group[] {
 }
 
 /** The list the screen opens on, when the address does not say. */
-export function defaultGroup(p: Persona, letters: readonly HomeLetter[], me: string): Group {
+export function defaultGroup(p: Persona): Group {
   if (p.control) return "all";
-  const mine = personalGroups(p);
-  // What waits for this person first; when nothing does, the first tile (with its empty state).
-  const waiting = mine.filter((g) => g === "todo" || g === "review" || g === "final");
-  return waiting.find((g) => letters.some((l) => inGroup(l, g, me))) ?? mine[0] ?? "all";
+  // What waits for this person: one kind of wait opens on its own tile ("לטיפול שלך" for an
+  // advisor); several kinds (the VP reviews and signs) open on everything that waits, together.
+  const waiting = personalGroups(p).filter((g) => g === "todo" || g === "review" || g === "final");
+  return waiting.length === 1 ? waiting[0]! : waiting.length > 1 ? "mine" : "all";
 }
 
 // ---------------------------------------------------------------- filters (kept in the address)
@@ -143,7 +143,7 @@ export function defaultGroup(p: Persona, letters: readonly HomeLetter[], me: str
 export const SORTS = ["wait", "track", "code"] as const;
 export type Sort = (typeof SORTS)[number];
 export const SORT_LABELS: Record<Sort, string> = {
-  wait: "זמן המתנה (הכי ותיק קודם)",
+  wait: "זמן המתנה",
   track: "שם מסלול",
   code: "קוד מסלול",
 };
@@ -229,12 +229,24 @@ export function applyFilters(items: readonly HomeLetter[], f: Filters, me: strin
 
 const he = new Intl.Collator("he", { numeric: true, sensitivity: "base" });
 
+/**
+ * For equal waits: letters someone has to act on before letters that are just in progress
+ * (being fixed, stuck, ready to send… before "being prepared"), finished ones last.
+ */
+const STATE_ORDER: FlowState[] = ["FIXING", "BLOCKED", "READY_FOR_ACADEMIC", "AWAITING_FINAL", "IN_REVIEW", "WITH_ACADEMIC", "LOADING", "PREPARING", "APPROVED"];
+
 export function sortItems(items: HomeLetter[], sort: Sort = "wait"): HomeLetter[] {
   const byTrack = (a: HomeLetter, b: HomeLetter) => he.compare(a.trackName, b.trackName) || he.compare(a.trackNumber, b.trackNumber);
   if (sort === "track") return items.sort(byTrack);
   if (sort === "code") return items.sort((a, b) => he.compare(a.trackNumber, b.trackNumber));
   // Longest wait first; finished letters (no wait) at the end.
-  return items.sort((a, b) => (b.waitingDays ?? -1) - (a.waitingDays ?? -1) || byTrack(a, b));
+  return items.sort(
+    (a, b) =>
+      (b.waitingDays ?? -1) - (a.waitingDays ?? -1) ||
+      STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) ||
+      b.latestVersion - a.latestVersion ||
+      byTrack(a, b),
+  );
 }
 
 /** True when anything besides the group narrows the list. */

@@ -73,7 +73,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const me = user.id;
   const persona = personaOf(user.roles, me, all);
   const filters = parseFilters(params);
-  const group = filters.g ?? defaultGroup(persona, all, me);
+  const group = filters.g ?? defaultGroup(persona);
+  // A registration manager who is also the advisor of every letter in the unit (שולי) needs no
+  // second, unit-wide summary: her own tiles already say it all.
+  const unitSummary = persona.control || persona.vp || (persona.rm && (!persona.advisor || all.some((l) => !l.advisorIds.includes(me))));
+  const onlyMine = !persona.control && !persona.vp && !persona.rm;
   const shown = sortItems(applyFilters(all, filters, me, group), filters.sort);
   const personal = personalGroups(persona);
   const canImport = canGlobal(actor, "MANAGE_UNITS");
@@ -118,17 +122,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section aria-label="תמונת מצב" className="flex flex-col gap-4">
         {personal.length > 0 && (
           <div className="flex flex-col gap-2">
-            {(persona.control || persona.rm || persona.vp) && <h2 className="text-sm font-bold text-muted">שלך</h2>}
+            {unitSummary && <h2 className="text-sm font-bold text-muted">שלך</h2>}
             <PersonalTiles groups={personal} items={all} me={me} filters={filters} current={group} />
           </div>
         )}
-        {persona.control || persona.vp || persona.rm ? (
+        {unitSummary ? (
           <StatusSummary
             items={all}
             label="מכתבים"
             filters={filters}
             current={group}
-            title={persona.control || persona.vp ? "כל המכתבים בעונה" : persona.advisor ? "כל המכתבים שלך וביחידה שלך" : "המכתבים ביחידה שלך"}
+            title={persona.control || persona.vp ? "כל המכתבים בעונה" : "המכתבים ביחידה שלך"}
           />
         ) : (
           all.length > 0 && (
@@ -175,6 +179,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           items={shown}
           canRemind={persona.control}
           showManager={persona.control}
+          showAdvisor={!onlyMine || all.some((l) => l.advisorId !== me)}
+          me={me}
           empty={<ListEmpty group={group} filters={filters} persona={persona} total={all.length} canImport={canImport} seasonId={view.season.id} />}
         />
       </section>

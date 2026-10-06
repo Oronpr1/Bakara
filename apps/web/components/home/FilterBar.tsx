@@ -86,7 +86,8 @@ export function FilterBar({
   const showCampus = options.campuses.length > 1 || Boolean(filters.campus);
   const showFaculty = options.faculties.length > 1 || Boolean(filters.faculty);
   const narrowed = Boolean(filters.campus || filters.faculty || filters.q || filters.advisor || filters.rm || filters.holder);
-  const cols = 2 + Number(showCampus) + Number(showFaculty) + (byPeople ? 2 : 0);
+  // The search takes twice a select's width on wide screens; every select gets an equal share.
+  const selects = 1 + Number(showCampus) + Number(showFaculty) + (byPeople ? 2 : 0);
 
   return (
     <div className="flex flex-col gap-2">
@@ -97,13 +98,12 @@ export function FilterBar({
           e.preventDefault();
           go(e.currentTarget);
         }}
-        className={`grid grid-cols-2 items-end gap-3 rounded-xl border border-line bg-surface-2 p-3 sm:p-4 ${
-          cols >= 5 ? "md:grid-cols-3 xl:grid-cols-6" : cols === 4 ? "md:grid-cols-4" : "md:grid-cols-3"
-        }`}
+        style={{ "--selects": selects } as React.CSSProperties}
+        className="grid grid-cols-2 items-end gap-3 rounded-xl border border-line bg-surface-2 p-3 sm:p-4 md:grid-cols-3 lg:[grid-template-columns:minmax(0,2fr)_repeat(var(--selects),minmax(0,1fr))]"
       >
         {filters.g && <input type="hidden" name="g" value={filters.g} />}
         {filters.holder && <input type="hidden" name="holder" value={filters.holder} />}
-        <div className={`col-span-2 flex min-w-0 flex-col gap-1 ${cols >= 5 ? "md:col-span-3 xl:col-span-2" : "md:col-span-1"}`}>
+        <div className={`col-span-2 flex min-w-0 flex-col gap-1 lg:col-span-1 ${selects >= 3 ? "md:col-span-3" : selects === 2 ? "md:col-span-1" : "md:col-span-2"}`}>
           <label htmlFor={searchId} className={labelClass}>
             חיפוש מסלול
           </label>

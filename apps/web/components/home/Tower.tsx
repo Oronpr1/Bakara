@@ -48,7 +48,7 @@ export function Holders({ tower, items, me, seasonId, filters }: { tower: TowerD
           <span className="text-sm text-muted">
             <span className="font-semibold text-fg">{letters(r.count)}</span>
             {" · "}
-            <span className={late ? "font-semibold text-bad" : ""}>הכי ותיק {days(r.oldestDays)}</span>
+            <span className={late ? "font-semibold text-bad" : ""}>הכי ותיק: {days(r.oldestDays)}</span>
           </span>
           <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
             {r.states.map(([s, n]) => {

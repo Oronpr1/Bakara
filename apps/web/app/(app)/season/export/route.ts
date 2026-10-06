@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   try {
     const { letters, season } = await getHomeView(actorOf(user), current.id);
     const filters = parseFilters(Object.fromEntries(new URL(req.url).searchParams));
-    const group = filters.g ?? defaultGroup(personaOf(user.roles, user.id, letters), letters, user.id);
+    const group = filters.g ?? defaultGroup(personaOf(user.roles, user.id, letters));
     const rows = sortItems(applyFilters(letters, filters, user.id, group), filters.sort);
     const day = new Date().toISOString().slice(0, 10);
     return new Response(lettersCsv(rows), {

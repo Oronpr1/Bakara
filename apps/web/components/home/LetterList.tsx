@@ -1,10 +1,10 @@
 "use client";
 
-import { BellRing, CalendarX2, ChevronLeft, CircleAlert, CircleCheck, MessageSquare, ShieldCheck, X } from "lucide-react";
+import { BellRing, CalendarX2, ChevronLeft, CircleAlert, CircleCheck, MessageSquare, ShieldCheck, UserCheck, X } from "lucide-react";
 import Link from "next/link";
 import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Holder, StatusChip, Tag } from "@/components/Pills";
+import { Holder, holderText, StatusChip, Tag } from "@/components/Pills";
 import { Spinner } from "@/components/Spinner";
 import { btnGood, btnSecondary } from "@/components/ui";
 import type { ActionResult } from "@/lib/action-result";
@@ -108,6 +108,8 @@ export function LetterList({
   items,
   canRemind,
   showManager,
+  showAdvisor,
+  me,
   empty,
 }: {
   items: HomeLetter[];
@@ -115,8 +117,23 @@ export function LetterList({
   canRemind: boolean;
   /** Show the registration manager under the advisor (for the control manager). */
   showManager: boolean;
+  /** An advisor looking at her own letters does not need her name on every row. */
+  showAdvisor: boolean;
+  me: string;
   empty: React.ReactNode;
 }) {
+  /** "אצלך · 3 ימים" when the letter waits for the viewer alone; otherwise the shared chip. */
+  const holder = (l: HomeLetter) =>
+    l.holderIds.length === 1 && l.holderIds[0] === me ? (
+      <span className={`inline-flex items-center gap-1 text-sm ${l.waitingDays !== null && l.waitingDays >= LATE_DAYS ? "font-semibold text-bad" : "font-semibold text-fg"}`}>
+        <UserCheck aria-hidden className="size-4" />
+        {["אצלך", holderText([], l.waitingDays)].filter(Boolean).join(" · ")}
+      </span>
+    ) : (
+      <Holder names={l.holderNames} waitingDays={l.waitingDays} late={LATE_DAYS} />
+    );
+  const people = (l: HomeLetter) =>
+    [showAdvisor ? `יועצת: ${l.advisorName}` : null, showManager ? `רישום: ${l.rmNames.length ? l.rmNames.join(", ") : "חסר"}` : null].filter(Boolean).join(" · ");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ActionResult>(null);
   const remindable = (l: HomeLetter) => canRemind && l.canRemind;
@@ -193,7 +210,7 @@ export function LetterList({
                   <input type="checkbox" className={checkbox} checked={allOn} onChange={toggleAll} aria-label={`בחירת כל ${plural(eligible.length)} שאפשר לפעול עליהם`} />
                 </th>
               )}
-              {["מסלול", "קמפוס · פקולטה", "יועצת", "מצב", "אצל", "הערות", "יעד"].map((h) => (
+              {["מסלול", "קמפוס · פקולטה", ...(showAdvisor || showManager ? [showAdvisor ? "יועצת" : "מנהל רישום"] : []), "מצב", "אצל", "הערות", "יעד"].map((h) => (
                 <th key={h} scope="col" className="px-3 py-2.5 text-start font-semibold whitespace-nowrap">
                   {h}
                 </th>
@@ -217,18 +234,21 @@ export function LetterList({
                   {l.campus}
                   <span className="block text-xs text-muted">{l.faculty}</span>
                 </td>
-                <td className="px-3 py-3 align-top">
-                  <span className="whitespace-nowrap">{l.advisorName}</span>
-                  {showManager && (
-                    <span className="block text-xs text-muted">רישום: {l.rmNames.length ? l.rmNames.join(", ") : <span className="font-semibold text-bad">חסר</span>}</span>
-                  )}
-                </td>
+                {(showAdvisor || showManager) && (
+                  <td className="px-3 py-3 align-top">
+                    {showAdvisor && <span className="block">{l.advisorName}</span>}
+                    {showManager && (
+                      <span className={showAdvisor ? "block text-xs text-muted" : "block"}>
+                        {showAdvisor && "רישום: "}
+                        {l.rmNames.length ? l.rmNames.join(", ") : <span className="font-semibold text-bad">חסר</span>}
+                      </span>
+                    )}
+                  </td>
+                )}
                 <td className="px-3 py-3 align-top">
                   <StatusChip state={l.state} />
                 </td>
-                <td className="px-3 py-3 align-top">
-                  <Holder names={l.holderNames} waitingDays={l.waitingDays} late={LATE_DAYS} />
-                </td>
+                <td className="px-3 py-3 align-top">{holder(l)}</td>
                 <td className="px-3 py-3 align-top">
                   <Comments n={l.openComments} />
                 </td>
@@ -269,11 +289,8 @@ export function LetterList({
                 <Due l={l} />
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-                <Holder names={l.holderNames} waitingDays={l.waitingDays} late={LATE_DAYS} />
-                <span>
-                  יועצת: {l.advisorName}
-                  {showManager && <> · רישום: {l.rmNames.length ? l.rmNames.join(", ") : <span className="font-semibold text-bad">חסר</span>}</>}
-                </span>
+                {holder(l)}
+                {people(l) && <span className={showManager && l.rmNames.length === 0 ? "text-bad" : ""}>{people(l)}</span>}
               </div>
             </div>
           </li>
