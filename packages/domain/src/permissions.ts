@@ -103,8 +103,12 @@ export function canOnLetter(actor: Actor, action: LetterAction, letter: LetterSt
     case "SET_REGISTRATION_MANAGER":
       // היועצת בוחרת בתחילת הדרך; סמנכ"ל או מנהלת בקרה יכולים להחליף בכל שלב.
       return open && (top || (advisor && letter.stage === "DRAFT"));
-    case "SET_ACADEMIC_APPROVERS":
-      return open && (top || (advisor && stageIndex(letter.stage) < stageIndex("ACADEMIC_ROUND")));
+    case "SET_ACADEMIC_APPROVERS": {
+      // כל אנשי סביבת העבודה של המסלול (יועצת, מנהל רישום, סמנכ"ל, מנהלת בקרה) בוחרים גורם אקדמי,
+      // עד לאישור הסופי. הגורמים האקדמיים עצמם לא בוחרים זה את זה.
+      const workspace = advisor || top || activeSlotsOf(actor, letter).some((s) => s !== "ACADEMIC");
+      return open && stageIndex(letter.stage) < stageIndex("FINAL_REVIEW") && workspace;
+    }
     case "REMOVE_APPROVER":
       return open && top;
     case "CHANGE_ADVISOR":

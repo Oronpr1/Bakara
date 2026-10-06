@@ -1,4 +1,4 @@
-import { Archive, CalendarRange, CalendarX2, ChevronLeft, CircleCheckBig, FilePen, type LucideIcon, MessageSquareWarning, ScanSearch, ShieldCheck, Stamp } from "lucide-react";
+import { Archive, CalendarRange, CalendarX2, ChevronLeft, CircleCheckBig, FilePen, type LucideIcon, MessageSquareWarning, ScanSearch, ShieldCheck, Stamp, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { StagePill, Tag } from "@/components/Pills";
@@ -16,6 +16,7 @@ const REASON_ICONS: Record<QueueReason, LucideIcon> = {
   FINAL_REVIEW: ShieldCheck,
   DRAFT: FilePen,
   OPEN_COMMENTS: MessageSquareWarning,
+  CHOOSE_ACADEMIC: UserPlus,
 };
 
 export default async function HomePage() {

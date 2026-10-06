@@ -49,6 +49,7 @@ export function pendingApprovers(letter: LetterState) {
 export type GateBlocker =
   | { kind: "PENDING_APPROVAL"; userId: string; slot: ApproverSlot }
   | { kind: "OPEN_COMMENTS"; count: number }
+  | { kind: "NO_ACADEMIC_APPROVER" }
   | { kind: "NO_VERSION" };
 
 /**
@@ -63,6 +64,10 @@ export function roundBlockers(letter: LetterState): GateBlocker[] {
     userId: a.userId,
     slot: a.slot,
   }));
+  // The academic round never completes on its own with nobody in it: someone from the letter's
+  // workspace must choose an academic approver first. Only a forced advance skips this.
+  if (letter.stage === "ACADEMIC_ROUND" && activeApprovers(letter, ["ACADEMIC"]).length === 0)
+    blockers.push({ kind: "NO_ACADEMIC_APPROVER" });
   const open = openCommentCount(letter);
   if (open > 0) blockers.push({ kind: "OPEN_COMMENTS", count: open });
   return blockers;
@@ -71,7 +76,8 @@ export function roundBlockers(letter: LetterState): GateBlocker[] {
 /**
  * The stage the letter should move to on its own, or null when it stays put.
  * Called after every approval, comment status change, or approver removal. Rounds with
- * no active approvers left are skipped.
+ * no active approvers left are skipped, except the academic round, which waits for an
+ * academic approver to be chosen.
  */
 export function autoAdvance(letter: LetterState): Stage | null {
   let stage = letter.stage;

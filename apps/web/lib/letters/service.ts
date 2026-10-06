@@ -279,10 +279,13 @@ export async function removeApprover(
 ) {
   await db.transaction(async (tx) => {
     const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    // Before the academic round, the advisor may still edit the academic list she set up.
+    // Before the academic round, anyone in the workspace may still edit the academic list; once
+    // the round has started only the control manager / VP remove an academic approver.
     const allowed =
       canOnLetter(actor, "REMOVE_APPROVER", state) ||
-      (slot === "ACADEMIC" && canOnLetter(actor, "SET_ACADEMIC_APPROVERS", state));
+      (slot === "ACADEMIC" &&
+        stageIndex(state.stage) < stageIndex("ACADEMIC_ROUND") &&
+        canOnLetter(actor, "SET_ACADEMIC_APPROVERS", state));
     if (!allowed) throw forbidden();
     const updated = await tx
       .update(approverAssignments)
