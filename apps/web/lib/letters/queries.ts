@@ -269,6 +269,10 @@ export interface RoomComment {
   y: number;
   width: number;
   height: number;
+  /** NOTE (text), X (a cross over text) or LINE (two points). */
+  kind: "NOTE" | "X" | "LINE";
+  color: string | null;
+  points: [number, number][] | null;
   body: string;
   suggestion: string | null;
   status: "OPEN" | "RESOLVED_FIXED" | "RESOLVED_NO_CHANGE";
@@ -387,6 +391,9 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
       y: c.y,
       width: c.width,
       height: c.height,
+      kind: c.kind,
+      color: c.color,
+      points: c.points ?? null,
       body: c.body,
       suggestion: c.suggestion,
       status: c.status === "NEEDS_CLARIFICATION" ? "OPEN" : c.status,

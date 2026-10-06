@@ -20,7 +20,28 @@ export class CommentError extends Error {
   }
 }
 
+export const COMMENT_KINDS = ["NOTE", "X", "LINE"] as const;
+export type CommentKind = (typeof COMMENT_KINDS)[number];
+export const COMMENT_KIND_LABELS: Record<CommentKind, string> = { NOTE: "פתק", X: "סימון X", LINE: "קו" };
+
+export type CommentPoints = [number, number][];
+
 const inUnit = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1;
+
+const MIN_SIDE = 0.004;
+
+/** A line is two points on the page; its anchor is the box around them (a hair of size, so it is never empty). */
+export function lineAnchor(points: CommentPoints, versionNumber: number, page: number): CommentAnchor {
+  if (points.length !== 2 || points.some((p) => p.length !== 2 || !inUnit(p[0]) || !inUnit(p[1])))
+    throw new CommentError("INVALID_ANCHOR", "הקו חייב להיות בתוך הדף");
+  const x = Math.min(points[0]![0], points[1]![0]);
+  const y = Math.min(points[0]![1], points[1]![1]);
+  const width = Math.max(Math.abs(points[0]![0] - points[1]![0]), MIN_SIDE);
+  const height = Math.max(Math.abs(points[0]![1] - points[1]![1]), MIN_SIDE);
+  return { versionNumber, page, x: Math.min(x, 1 - width), y: Math.min(y, 1 - height), width, height };
+}
+
+export const isColor = (c: string | null | undefined): c is string => !!c && /^#[0-9a-fA-F]{6}$/.test(c);
 
 export function validateAnchor(anchor: CommentAnchor, pageCount: number, latestVersion: number): void {
   const { versionNumber, page, x, y, width, height } = anchor;

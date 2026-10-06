@@ -272,6 +272,12 @@ export const comments = pgTable(
     /** Image of the marked area at the time of writing, for the "what was here" popup. */
     snapshotKey: text("snapshot_key"),
     body: text("body").notNull(),
+    /** What the mark is: a note with text, an X over some text, or a line. */
+    kind: text("kind", { enum: ["NOTE", "X", "LINE"] }).notNull().default("NOTE"),
+    /** The mark's colour (#rrggbb); null = the default. */
+    color: text("color"),
+    /** For a line: its two end points, each [x, y] as a fraction of the page as displayed. */
+    points: jsonb("points").$type<[number, number][]>(),
     /** "במקום ___ כתבו ___": the wording the reviewer proposes. */
     suggestion: text("suggestion"),
     /** A reviewer's comments stay drafts (seen only by the author) until their decision publishes them. */

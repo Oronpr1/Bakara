@@ -1,5 +1,16 @@
 import { getDb, schema, type Db } from "@al/db";
-import { abilities, validateAnchor, validateStatusChange, type Actor, type CommentAnchor, type StatusChange } from "@al/domain";
+import {
+  abilities,
+  isColor,
+  lineAnchor,
+  validateAnchor,
+  validateStatusChange,
+  type Actor,
+  type CommentAnchor,
+  type CommentKind,
+  type CommentPoints,
+  type StatusChange,
+} from "@al/domain";
 import { and, eq, isNull } from "drizzle-orm";
 import { AppError, forbidden, notFound } from "../errors";
 import { audit, notify } from "../notify";
@@ -30,11 +41,24 @@ function isPng(bytes: Uint8Array) {
 export async function createComment(
   actor: Actor,
   letterId: string,
-  input: { anchor: CommentAnchor; body: string; suggestion?: string; snapshotPng?: Uint8Array },
+  input: {
+    anchor: CommentAnchor;
+    /** Required for a note; optional for an X or a line (a mark without words). */
+    body?: string;
+    suggestion?: string;
+    kind?: CommentKind;
+    color?: string | null;
+    /** For a line: its two end points. */
+    points?: CommentPoints;
+    snapshotPng?: Uint8Array;
+  },
   db: Db = getDb(),
 ) {
-  const body = cleanBody(input.body);
+  const kind = input.kind ?? "NOTE";
+  const body = kind === "NOTE" ? cleanBody(input.body ?? "") : (input.body ?? "").trim().slice(0, MAX_BODY);
   const suggestion = input.suggestion?.trim() ? cleanBody(input.suggestion) : null;
+  if (input.color != null && !isColor(input.color)) throw new AppError("INVALID", "הצבע לא תקין");
+  const anchorIn = kind === "LINE" ? lineAnchor(input.points ?? [], input.anchor.versionNumber, input.anchor.page) : input.anchor;
   if (input.snapshotPng && (input.snapshotPng.byteLength > MAX_SNAPSHOT_BYTES || !isPng(input.snapshotPng)))
     throw new AppError("INVALID", "תמונת האזור לא תקינה");
 
@@ -48,7 +72,7 @@ export async function createComment(
       .from(versions)
       .where(and(eq(versions.letterId, letterId), eq(versions.number, input.anchor.versionNumber)));
     if (!version) throw notFound();
-    validateAnchor(input.anchor, version.pageCount, l.row.latestVersion);
+    validateAnchor(anchorIn, version.pageCount, l.row.latestVersion);
 
     let snapshotKey: string | null = null;
     if (input.snapshotPng) {
@@ -56,10 +80,13 @@ export async function createComment(
       await getFileStore().put(snapshotKey, input.snapshotPng, "image/png");
     }
     const draft = ab.decide.length > 0;
-    const { versionNumber, page, x, y, width, height } = input.anchor;
+    const { versionNumber, page, x, y, width, height } = anchorIn;
     const [comment] = await tx
       .insert(comments)
       .values({
+        kind,
+        color: input.color ?? null,
+        points: kind === "LINE" ? input.points : null,
         letterId,
         versionNumber,
         page,
@@ -83,6 +110,44 @@ export async function createComment(
       await afterChange(tx, letterId, ab.flow, actor.userId);
     }
     return comment!;
+  });
+}
+
+/** The author changes a draft: moves or resizes it, recolours it, or rewrites it. Published comments are not edited. */
+export async function updateDraftComment(
+  actor: Actor,
+  commentId: string,
+  change: { anchor?: Omit<CommentAnchor, "versionNumber" | "page"> & Partial<Pick<CommentAnchor, "versionNumber" | "page">>; color?: string | null; points?: CommentPoints; body?: string; suggestion?: string | null },
+  db: Db = getDb(),
+) {
+  return db.transaction(async (tx) => {
+    const [comment] = await tx.select().from(comments).where(eq(comments.id, commentId)).for("update");
+    if (!comment || comment.authorId !== actor.userId || comment.publishedAt) throw forbidden();
+    const l = await loadLetter(tx, comment.letterId);
+    if (!abilities(actor, l.input).comment) throw forbidden();
+    if (change.color != null && !isColor(change.color)) throw new AppError("INVALID", "הצבע לא תקין");
+    const set: Partial<typeof comments.$inferInsert> = {};
+    if (change.color !== undefined) set.color = change.color;
+    if (change.body !== undefined) set.body = comment.kind === "NOTE" ? cleanBody(change.body) : change.body.trim().slice(0, MAX_BODY);
+    if (change.suggestion !== undefined) set.suggestion = change.suggestion?.trim() ? cleanBody(change.suggestion) : null;
+    const page = change.anchor?.page ?? comment.page;
+    const versionNumber = change.anchor?.versionNumber ?? comment.versionNumber;
+    const anchor =
+      comment.kind === "LINE" && change.points
+        ? lineAnchor(change.points, versionNumber, page)
+        : change.anchor
+          ? { versionNumber, page, x: change.anchor.x, y: change.anchor.y, width: change.anchor.width, height: change.anchor.height }
+          : null;
+    if (anchor) {
+      const [version] = await tx.select({ pageCount: versions.pageCount }).from(versions).where(and(eq(versions.letterId, comment.letterId), eq(versions.number, versionNumber)));
+      if (!version) throw notFound();
+      validateAnchor(anchor, version.pageCount, l.row.latestVersion);
+      Object.assign(set, { page: anchor.page, x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.height });
+    }
+    if (change.points && comment.kind === "LINE") set.points = change.points;
+    if (Object.keys(set).length === 0) return comment;
+    const [updated] = await tx.update(comments).set(set).where(eq(comments.id, commentId)).returning();
+    return updated!;
   });
 }
 
