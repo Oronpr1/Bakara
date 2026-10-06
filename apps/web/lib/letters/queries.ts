@@ -180,12 +180,12 @@ export function queueReason(actor: Actor, state: LetterState): QueueReason | nul
 }
 
 /** Letters in active seasons that wait for the actor, grouped by season (newest first). */
-export async function workQueue(actor: Actor, db: Db = getDb()) {
+export async function workQueue(actor: Actor, seasonId?: string, db: Db = getDb()) {
   const rows = await db
     .select({ letter: letterRequests, season: seasons })
     .from(letterRequests)
     .innerJoin(seasons, eq(seasons.id, letterRequests.seasonId))
-    .where(eq(seasons.status, "ACTIVE"))
+    .where(seasonId ? eq(seasons.id, seasonId) : eq(seasons.status, "ACTIVE"))
     .orderBy(desc(seasons.createdAt), asc(letterRequests.dueDate), asc(letterRequests.trackName));
   const items = await listItems(
     actor,

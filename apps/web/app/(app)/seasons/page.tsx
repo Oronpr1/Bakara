@@ -13,7 +13,7 @@ import { canSeeAllLetters, listSeasons } from "@/lib/letters/queries";
 import { createSeasonAction } from "./actions";
 import { ReminderForm } from "./ReminderForm";
 
-export const metadata = { title: "עונות רישום · מכתבי קבלה" };
+export const metadata = { title: "הגדרות עונות · מכתבי קבלה" };
 
 export default async function SeasonsPage() {
   const actor = actorOf(await requireUser());
@@ -25,8 +25,8 @@ export default async function SeasonsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold">עונות רישום</h1>
-        <p className="text-sm text-muted">כל עונה מרכזת את דרישות המכתב של מחזור רישום אחד.</p>
+        <h1 className="text-2xl font-bold">הגדרות עונות</h1>
+        <p className="text-sm text-muted">פתיחת עונה (פעם אחת לכל מחזור) והגדרות של כל עונה. את העונה שעובדים עליה בוחרים בראש המסך.</p>
       </div>
 
       {seasons.length === 0 ? (

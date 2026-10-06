@@ -1,4 +1,4 @@
-import { Archive, CalendarRange, CalendarX2, ChevronLeft, CircleCheckBig, FilePen, type LucideIcon, MessageSquareWarning, ScanSearch, ShieldCheck, Stamp, UserPlus } from "lucide-react";
+import { CalendarX2, ChevronLeft, CircleCheckBig, FilePen, type LucideIcon, MessageSquareWarning, ScanSearch, ShieldCheck, Stamp, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
 import { StagePill, Tag } from "@/components/Pills";
@@ -6,7 +6,8 @@ import { sectionTitle } from "@/components/ui";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
 import { formatDate } from "@/lib/format";
-import { canSeeAllLetters, listSeasons, QUEUE_REASON_LABELS, type QueueReason, workQueue } from "@/lib/letters/queries";
+import { QUEUE_REASON_LABELS, type QueueReason, workQueue } from "@/lib/letters/queries";
+import { currentSeason } from "@/lib/season-context";
 
 export const metadata = { title: "העבודה שלי · מכתבי קבלה" };
 
@@ -21,8 +22,8 @@ const REASON_ICONS: Record<QueueReason, LucideIcon> = {
 
 export default async function HomePage() {
   const user = await requireUser();
-  const seeAll = canSeeAllLetters(actorOf(user));
-  const [groups, seasons] = await Promise.all([workQueue(actorOf(user)), listSeasons()]);
+  const { current } = await currentSeason();
+  const groups = await workQueue(actorOf(user), current?.id);
   const total = groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
@@ -106,50 +107,6 @@ export default async function HomePage() {
           </ul>
         </section>
       ))}
-
-      <section aria-labelledby="seasons-h" className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="seasons-h" className={sectionTitle}>
-            עונות רישום
-          </h2>
-          <Link href="/seasons" className="inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-accent hover:underline">
-            ניהול עונות
-            <ChevronLeft aria-hidden className="size-4" />
-          </Link>
-        </div>
-        {seasons.length === 0 ? (
-          <EmptyState icon={CalendarRange} title="עדיין לא נפתחו עונות" />
-        ) : (
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {seasons.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/seasons/${s.id}`}
-                  className="group flex h-full items-center gap-3 rounded-xl border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-accent/60 hover:bg-surface-2"
-                >
-                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted ring-1 ring-line ring-inset group-hover:text-accent">
-                    {s.status === "ARCHIVED" ? <Archive aria-hidden className="size-5" /> : <CalendarRange aria-hidden className="size-5" />}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="font-semibold">{s.name}</span>
-                    <span className="text-sm text-muted">
-                      {seeAll ? (
-                        <>
-                          <span className="tabular">{s.letterCount}</span> דרישות מכתב
-                        </>
-                      ) : (
-                        "פתיחת העונה"
-                      )}
-                      {s.status === "ARCHIVED" ? " · בארכיון" : ""}
-                    </span>
-                  </span>
-                  <ChevronLeft aria-hidden className="size-5 text-muted" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }
