@@ -1,10 +1,12 @@
 import { getDb, schema, type Db } from "@al/db";
-import { canGlobal, type Actor } from "@al/domain";
+import { canGlobal, flowView, type Actor, type FlowView } from "@al/domain";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { AppError, forbidden } from "../errors";
 import { audit } from "../notify";
+import { afterChange } from "../letters/engine";
+import { loadLetters } from "../letters/state";
 
-const { units, campuses, users } = schema;
+const { units, campuses, users, letterRequests, seasons } = schema;
 
 export interface UnitRow {
   id: string;
@@ -88,15 +90,36 @@ function patch(change: DefaultsChange) {
   return set;
 }
 
+/**
+ * The registration manager is worked out from the campus and faculty, so changing it moves the
+ * letters that were waiting for the old one. The new person is told it is their turn, and the
+ * "waiting since" starts again for them.
+ */
+async function rehoming(db: Db, actor: Actor, campus: string, faculty: string | null) {
+  const where = faculty ? and(eq(letterRequests.campus, campus), eq(letterRequests.faculty, faculty)) : eq(letterRequests.campus, campus);
+  const rows = await db
+    .select({ letter: letterRequests })
+    .from(letterRequests)
+    .innerJoin(seasons, eq(seasons.id, letterRequests.seasonId))
+    .where(and(where, eq(letterRequests.phase, "REVIEW"), eq(seasons.status, "ACTIVE")));
+  const before = new Map<string, FlowView>();
+  for (const l of await loadLetters(db, rows.map((r) => r.letter))) before.set(l.row.id, flowView(l.input));
+  return async () => {
+    for (const [id, view] of before) await db.transaction((tx) => afterChange(tx, id, view, actor.userId));
+  };
+}
+
 export async function setCampusDefaults(actor: Actor, campusId: string, change: DefaultsChange, db: Db = getDb()) {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
   const campus = await db.query.campuses.findFirst({ where: eq(campuses.id, campusId) });
   if (!campus) throw new AppError("NOT_FOUND", "הקמפוס לא נמצא");
   await assertPeople(db, change);
+  const rehome = await rehoming(db, actor, campus.name, null);
   await db.transaction(async (tx) => {
     await tx.update(campuses).set(patch(change)).where(eq(campuses.id, campusId));
     await audit(tx, actor.userId, "CAMPUS_DEFAULTS_SET", {}, { campus: campus.name, ...change });
   });
+  await rehome();
 }
 
 export async function setUnitDefaults(actor: Actor, unitId: string, change: DefaultsChange, db: Db = getDb()) {
@@ -104,8 +127,10 @@ export async function setUnitDefaults(actor: Actor, unitId: string, change: Defa
   const unit = await db.query.units.findFirst({ where: eq(units.id, unitId) });
   if (!unit) throw new AppError("NOT_FOUND", "הפקולטה לא נמצאה");
   await assertPeople(db, change);
+  const rehome = await rehoming(db, actor, unit.campus, unit.faculty);
   await db.transaction(async (tx) => {
     await tx.update(units).set(patch(change)).where(eq(units.id, unitId));
     await audit(tx, actor.userId, "UNIT_DEFAULTS_SET", {}, { campus: unit.campus, faculty: unit.faculty, ...change });
   });
+  await rehome();
 }
