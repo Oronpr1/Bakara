@@ -5,7 +5,7 @@ import { Holder, PHASE_ICONS, PHASE_TONES, StatusChip, TONE_MARKS, TONE_TEXT } f
 import { STEP_LABELS, plural, type RoomProps } from "@/lib/room/view";
 
 /** Track, code, campus and faculty, season, version; one status chip with who holds it; the five steps. */
-export function RoomHeader({ room, backHref = "/" }: { room: RoomProps; backHref?: string | null }) {
+export function RoomHeader({ room, backHref = "/", actions }: { room: RoomProps; backHref?: string | null; actions?: React.ReactNode }) {
   const lateDays = 5;
   return (
     <header className="flex flex-col gap-3">
@@ -47,6 +47,7 @@ export function RoomHeader({ room, backHref = "/" }: { room: RoomProps; backHref
               {plural(room.openComments, "הערה פתוחה", "הערות פתוחות")}
             </span>
           )}
+          {actions}
         </div>
       </div>
       <PhaseRail phase={room.phase} done={room.state === "APPROVED"} />
