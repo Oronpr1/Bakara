@@ -36,14 +36,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         דלג לתוכן
       </a>
       <header className="bg-brand text-brand-fg">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 pt-3">
-          <Link href="/" className="flex items-center gap-2.5 rounded-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 pt-3 sm:gap-4">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5 rounded-md">
             <span className="grid size-8 place-items-center rounded-md bg-brand-fg/15">
               <Mail aria-hidden className="size-4" />
             </span>
             <span className="text-lg font-bold">מכתבי קבלה</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             {current && !linkOnly && (
               <SeasonSwitcher
                 seasons={seasons.map((s) => ({ id: s.id, name: s.name, archived: s.status === "ARCHIVED" }))}
@@ -57,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span
               aria-hidden
               title={`${user.name} · ${roles}`}
-              className="grid size-9 place-items-center rounded-full bg-brand-fg/15 text-sm font-bold"
+              className="hidden size-9 place-items-center rounded-full bg-brand-fg/15 text-sm font-bold sm:grid"
             >
               {initials(user.name)}
             </span>

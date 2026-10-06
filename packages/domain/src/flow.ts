@@ -283,7 +283,7 @@ export function decide(input: FlowInput, opts: DecideOptions, at = new Date()): 
 /** A reviewer takes back their own approval, so the letter is theirs to look at again. */
 export function retract(input: FlowInput, seat: SeatKey, userId: string, at = new Date()): Decision {
   const s = seatsOf(input).find((x) => x.key === seat);
-  if (!s || s.status !== "approved" || s.auto) throw new FlowError("NOTHING_TO_RETRACT", "אין אישור לבטל");
+  if (!s || s.status !== "approved" || s.auto || input.phase === "APPROVED") throw new FlowError("NOTHING_TO_RETRACT", "אין אישור לבטל");
   return { seat, kind: "CLEARED", userId, versionNumber: input.latestVersion, at };
 }
 

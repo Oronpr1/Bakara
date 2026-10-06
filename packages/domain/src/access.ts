@@ -91,7 +91,8 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
     }
   }
 
-  const retract: SeatKey[] = canSee
+  // Once the letter is approved nobody takes an approval back; the control manager reopens it instead.
+  const retract: SeatKey[] = canSee && phase !== "APPROVED"
     ? seatsOf(input)
         .filter((s) => s.status === "approved" && !s.auto && s.decision && s.decision.userId === actor.userId)
         .map((s) => s.key)

@@ -381,8 +381,11 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
   for (const { reply } of replyRows)
     replies.set(reply.commentId, [...(replies.get(reply.commentId) ?? []), { id: reply.id, authorName: nameOf(reply.authorId) ?? "—", body: reply.body, createdAt: reply.createdAt }]);
 
+  // An academic approver is outside the internal review: they see their own marks, not the staff's
+  // exchange (what was "not accepted" and why stays between the staff).
+  const academicOnly = actor.roles.length > 0 && actor.roles.every((r) => r === "ACADEMIC_APPROVER");
   const visibleComments: RoomComment[] = commentRows
-    .filter((c) => c.publishedAt || c.authorId === actor.userId)
+    .filter((c) => (academicOnly ? c.authorId === actor.userId : c.publishedAt || c.authorId === actor.userId))
     .map((c) => ({
       id: c.id,
       versionNumber: c.versionNumber,
