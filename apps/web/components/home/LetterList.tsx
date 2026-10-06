@@ -2,7 +2,7 @@
 
 import { BellRing, CalendarX2, ChevronLeft, CircleAlert, CircleCheck, MessageSquare, ShieldCheck, UserCheck, X } from "lucide-react";
 import Link from "next/link";
-import { startTransition, useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Holder, holderText, StatusChip, Tag } from "@/components/Pills";
 import { Spinner } from "@/components/Spinner";
@@ -39,65 +39,11 @@ function Comments({ n }: { n: number }) {
   ) : null;
 }
 
-/** One bulk action: a button that sends the selected ids, optionally after a confirmation. */
-function BulkButton({
-  ids,
-  action,
-  label,
-  icon,
-  className,
-  confirm,
-  onDone,
-}: {
-  ids: string[];
-  action: (prev: ActionResult, form: FormData) => Promise<ActionResult>;
-  label: string;
-  icon: React.ReactNode;
-  className: string;
-  confirm?: string;
-  onDone: (r: ActionResult) => void;
-}) {
-  const [state, dispatch, pending] = useActionState<ActionResult, FormData>(action, null);
-  const [asking, setAsking] = useState(false);
-  const form = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (state) onDone(state);
-  }, [state, onDone]);
-  const send = () => {
-    const data = new FormData();
-    for (const id of ids) data.append("ids", id);
-    startTransition(() => dispatch(data));
-  };
-  return (
-    <form
-      ref={form}
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (confirm) setAsking(true);
-        else send();
-      }}
-    >
-      <button className={className} disabled={pending || ids.length === 0}>
-        {pending ? <Spinner /> : icon}
-        {label}
-      </button>
-      {confirm && (
-        <ConfirmDialog
-          open={asking}
-          message={confirm}
-          confirmLabel={label}
-          onCancel={() => setAsking(false)}
-          onConfirm={() => {
-            setAsking(false);
-            send();
-          }}
-        />
-      )}
-    </form>
-  );
-}
-
 const plural = (n: number) => (n === 1 ? "מכתב אחד" : `${n} מכתבים`);
+
+type Bulk = "remind" | "final";
+/** Both bulk actions through one state, so the result stays on screen even when the list empties. */
+const runBulk = (prev: ActionResult, form: FormData) => (form.get("kind") === "final" ? approveFinalAction(prev, form) : remindLettersAction(prev, form));
 
 /**
  * The letters as a table on wide screens and cards on phones; each opens the letter. When the
@@ -135,8 +81,12 @@ export function LetterList({
   const people = (l: HomeLetter) =>
     [showAdvisor ? `יועצת: ${l.advisorName}` : null, showManager ? `רישום: ${l.rmNames.length ? l.rmNames.join(", ") : "חסר"}` : null].filter(Boolean).join(" · ");
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [result, setResult] = useState<ActionResult>(null);
-  const remindable = (l: HomeLetter) => canRemind && l.canRemind;
+  const [result, dispatch, pending] = useActionState<ActionResult, FormData>(runBulk, null);
+  const [running, setRunning] = useState<Bulk | null>(null);
+  const [dismissed, setDismissed] = useState<ActionResult>(null);
+  const [asking, setAsking] = useState(false);
+  // A reminder about a letter that waits only for the viewer would go to nobody.
+  const remindable = (l: HomeLetter) => canRemind && l.canRemind && l.holderIds.some((id) => id !== me);
   const selectable = (l: HomeLetter) => remindable(l) || finalEligible(l);
   const eligible = useMemo(() => items.filter(selectable), [items, canRemind]); // eslint-disable-line react-hooks/exhaustive-deps
   // Ids that left the list (filtered away, or approved meanwhile) drop out of the selection.
@@ -155,15 +105,38 @@ export function LetterList({
       return next;
     });
   const toggleAll = () => setPicked(allOn ? new Set() : new Set(eligible.map((l) => l.id)));
-  const done = useMemo(
-    () => (r: ActionResult) => {
-      setResult(r);
-      if (r && "ok" in r) setPicked(new Set());
-    },
-    [],
+  useEffect(() => {
+    if (result && "ok" in result) setPicked(new Set());
+  }, [result]);
+  const send = (kind: Bulk, ids: string[]) => {
+    const form = new FormData();
+    form.set("kind", kind);
+    for (const id of ids) form.append("ids", id);
+    setRunning(kind);
+    startTransition(() => dispatch(form));
+  };
+  const showResult = result && result !== dismissed;
+
+  const banner = showResult && (
+    <p
+      role={"error" in result ? "alert" : "status"}
+      className={`flex items-start gap-2 rounded-lg p-3 text-sm font-semibold ${"error" in result ? "bg-bad-soft text-bad" : "bg-good-soft text-good"}`}
+    >
+      {"error" in result ? <CircleAlert aria-hidden className="mt-0.5 size-4" /> : <CircleCheck aria-hidden className="mt-0.5 size-4" />}
+      <span className="flex-1">{"error" in result ? result.error : result.message}</span>
+      <button type="button" onClick={() => setDismissed(result)} aria-label="סגירת ההודעה" className="-m-1 rounded p-1 hover:bg-surface/50">
+        <X aria-hidden className="size-4" />
+      </button>
+    </p>
   );
 
-  if (items.length === 0) return <>{empty}</>;
+  if (items.length === 0)
+    return (
+      <div className="flex flex-col gap-3">
+        {banner}
+        {empty}
+      </div>
+    );
 
   const box = (l: HomeLetter) =>
     selectable(l) ? (
@@ -178,18 +151,7 @@ export function LetterList({
 
   return (
     <div className="flex flex-col gap-3">
-      {result && (
-        <p
-          role={"error" in result ? "alert" : "status"}
-          className={`flex items-start gap-2 rounded-lg p-3 text-sm font-semibold ${"error" in result ? "bg-bad-soft text-bad" : "bg-good-soft text-good"}`}
-        >
-          {"error" in result ? <CircleAlert aria-hidden className="mt-0.5 size-4" /> : <CircleCheck aria-hidden className="mt-0.5 size-4" />}
-          <span className="flex-1">{"error" in result ? result.error : result.message}</span>
-          <button type="button" onClick={() => setResult(null)} aria-label="סגירת ההודעה" className="-m-1 rounded p-1 hover:bg-surface/50">
-            <X aria-hidden className="size-4" />
-          </button>
-        </p>
-      )}
+      {banner}
 
       {anySelectable && (
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted lg:hidden">
@@ -307,34 +269,38 @@ export function LetterList({
             נבחרו {plural(chosen.length)}
           </p>
           {toRemind.length > 0 && (
-            <BulkButton
-              ids={toRemind}
-              action={remindLettersAction}
-              label={`תזכיר למסומנים (${toRemind.length})`}
-              icon={<BellRing aria-hidden className="size-4" />}
-              className={btnSecondary}
-              onDone={done}
-            />
+            <button type="button" className={btnSecondary} disabled={pending} onClick={() => send("remind", toRemind)}>
+              {pending && running === "remind" ? <Spinner /> : <BellRing aria-hidden className="size-4" />}
+              תזכיר למסומנים ({toRemind.length})
+            </button>
           )}
           {toApprove.length > 0 && (
-            <BulkButton
-              ids={toApprove.map((l) => l.id)}
-              action={approveFinalAction}
-              label={`אשר סופית למסומנים (${toApprove.length})`}
-              icon={<ShieldCheck aria-hidden className="size-4" />}
-              className={btnGood}
-              confirm={`לאשר סופית ${plural(toApprove.length)}? הם יעברו ל"מאושר להפצה", והיועצות יקבלו הודעה.${
-                behalf.length ? ` האישור יירשם במקום ${behalf.join(", ")}, ${behalf.length === 1 ? "שיקבל" : "שיקבלו"} הודעה.` : ""
-              }`}
-              onDone={done}
-            />
+            <button type="button" className={btnGood} disabled={pending} onClick={() => setAsking(true)}>
+              {pending && running === "final" ? <Spinner /> : <ShieldCheck aria-hidden className="size-4" />}
+              אשר סופית למסומנים ({toApprove.length})
+            </button>
           )}
-          <button type="button" className={btnSecondary} onClick={() => setPicked(new Set())}>
+          <button type="button" className={btnSecondary} disabled={pending} onClick={() => setPicked(new Set())}>
             <X aria-hidden className="size-4" />
             נקה בחירה
           </button>
         </div>
       )}
+      <ConfirmDialog
+        open={asking}
+        message={`${toApprove.length === 1 ? `לאשר סופית את המכתב של ${toApprove[0]?.trackName}? הוא יעבור` : `לאשר סופית ${plural(toApprove.length)}? הם יעברו`} ל"מאושר להפצה", והיועצת תקבל הודעה.${
+          behalf.length ? ` האישור יירשם במקום ${behalf.join(", ")}, ${behalf.length === 1 ? "שיקבל" : "שיקבלו"} הודעה.` : ""
+        }`}
+        confirmLabel={toApprove.length === 1 ? "אשר סופית" : `אשר סופית ${plural(toApprove.length)}`}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => {
+          setAsking(false);
+          send(
+            "final",
+            toApprove.map((l) => l.id),
+          );
+        }}
+      />
     </div>
   );
 }

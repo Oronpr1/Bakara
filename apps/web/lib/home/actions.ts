@@ -110,5 +110,8 @@ export async function approveFinalAction(_prev: ActionResult, form: FormData): P
   if (approved === 0)
     return { error: "אף מכתב לא אושר: הם כבר לא ממתינים לאישור הסופי שלך, או שיש בהם הערות פתוחות או הערות שלך שטרם פורסמו." };
   const skip = skipped.length ? ` ${n(skipped.length, "מכתב אחד דולג", "מכתבים דולגו")} (כבר לא ממתין לאישור סופי, או שיש בו הערות פתוחות).` : "";
-  return { ok: true, message: `אושרו סופית ${n(approved, "מכתב אחד", "מכתבים")}. היועצות קיבלו הודעה.${skip}` };
+  return {
+    ok: true,
+    message: `${approved === 1 ? "אושר סופית מכתב אחד. היועצת קיבלה הודעה." : `אושרו סופית ${approved} מכתבים. היועצות קיבלו הודעה.`}${skip}`,
+  };
 }

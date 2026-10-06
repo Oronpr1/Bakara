@@ -159,8 +159,9 @@ function blockedUnits(blocked: TowerData["blocked"]) {
 }
 
 export function Attention({ tower, items, filters }: { tower: TowerData; items: HomeLetter[]; filters: Filters }) {
-  const loading = items.filter((l) => l.state === "LOADING");
-  const units = blockedUnits(tower.blocked);
+  const entries = attentionEntries(tower, items, filters);
+  // Everything that is fine is said once, in one calm line, so what needs her stands out.
+  const calm = entries.filter((e) => e.count === 0);
   return (
     <section aria-labelledby="attention-h" className={panel}>
       <h2 id="attention-h" className="flex items-center gap-2 text-lg font-bold">
@@ -168,7 +169,38 @@ export function Attention({ tower, items, filters }: { tower: TowerData; items: 
         דורש תשומת לב
       </h2>
       <ul className="flex flex-col gap-2">
-        <Item icon={TriangleAlert} tone="bad" title="חסר בעל תפקיד" count={tower.blocked.length} href={listHref(filters, { g: "blocked" })}>
+        {entries.filter((e) => e.count > 0).map((e) => (
+          <Item key={e.key} icon={e.icon} tone={e.tone} title={e.title} count={e.count} href={e.href}>
+            {e.details}
+          </Item>
+        ))}
+        {calm.length > 0 && (
+          <li className="flex items-start gap-3 rounded-lg border border-line p-3">
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-good-soft text-good">
+              <CircleCheckBig aria-hidden className="size-4" />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-semibold">אין כרגע</span>
+              <span className="text-sm text-muted">{calm.map((e) => e.title).join(" · ")}</span>
+            </span>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+function attentionEntries(tower: TowerData, items: HomeLetter[], filters: Filters) {
+  const units = blockedUnits(tower.blocked);
+  return [
+    {
+      key: "blocked",
+      icon: TriangleAlert,
+      tone: "bad" as const,
+      title: "חסר בעל תפקיד",
+      count: tower.blocked.length,
+      href: listHref(filters, { g: "blocked" }),
+      details: (
           <ul className="flex flex-col gap-1.5 text-sm">
             {units.map((u) => (
               <li key={`${u.campus}-${u.faculty}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -185,9 +217,17 @@ export function Attention({ tower, items, filters }: { tower: TowerData; items: 
               </li>
             ))}
           </ul>
-        </Item>
-        <Item icon={CalendarX2} tone="bad" title="באיחור (עבר תאריך היעד)" count={tower.overdue} href={listHref(filters, { g: "overdue" })} />
-        <Item icon={Link2Off} tone="warn" title="קישור אקדמי שפג או לא נפתח" count={tower.academicLinkProblems.length} href={listHref(filters, { g: "link" })}>
+      ),
+    },
+    { key: "overdue", icon: CalendarX2, tone: "bad" as const, title: "באיחור (עבר תאריך היעד)", count: tower.overdue, href: listHref(filters, { g: "overdue" }) },
+    {
+      key: "link",
+      icon: Link2Off,
+      tone: "warn" as const,
+      title: "קישור אקדמי שפג או לא נפתח",
+      count: tower.academicLinkProblems.length,
+      href: listHref(filters, { g: "link" }),
+      details: (
           <ul className="flex flex-col gap-1 text-sm">
             {tower.academicLinkProblems.slice(0, 5).map((l) => (
               <li key={l.id}>
@@ -200,14 +240,16 @@ export function Attention({ tower, items, filters }: { tower: TowerData; items: 
               </li>
             ))}
           </ul>
-        </Item>
-        <Item
-          icon={FileX2}
-          tone="muted"
-          title="לא התחילו (אין גרסה)"
-          count={tower.notStarted.reduce((n, s) => n + s.count, 0)}
-          href={listHref(filters, { g: "notstarted" })}
-        >
+      ),
+    },
+    {
+      key: "notstarted",
+      icon: FileX2,
+      tone: "muted" as const,
+      title: "לא התחילו (אין גרסה)",
+      count: tower.notStarted.reduce((n, s) => n + s.count, 0),
+      href: listHref(filters, { g: "notstarted" }),
+      details: (
           <ul className="flex flex-col gap-0.5 text-sm">
             {tower.notStarted.map((s) => (
               <li key={s.advisorId}>
@@ -218,9 +260,15 @@ export function Attention({ tower, items, filters }: { tower: TowerData; items: 
               </li>
             ))}
           </ul>
-        </Item>
-        <Item icon={Hourglass} tone="warn" title="מאושרים שטרם עלו לגלבוע" count={loading.length} href={listHref(filters, { g: "gilboa" })} />
-      </ul>
-    </section>
-  );
+      ),
+    },
+    {
+      key: "gilboa",
+      icon: Hourglass,
+      tone: "warn" as const,
+      title: "מאושרים שטרם עלו לגלבוע",
+      count: items.filter((l) => l.state === "LOADING").length,
+      href: listHref(filters, { g: "gilboa" }),
+    },
+  ] satisfies { key: string; icon: LucideIcon; tone: "bad" | "warn" | "muted"; title: string; count: number; href: string; details?: React.ReactNode }[];
 }
