@@ -9,7 +9,7 @@ import { setMailer } from "../mail";
 import { setFileStore } from "../storage";
 import { setCampusDefaults } from "../units/service";
 import { getSessionUser } from "../auth/service";
-import { createComment, replyToComment, setCommentStatus } from "./comments";
+import { createComment, deleteDraftComment, replyToComment, setCommentStatus, updateDraftComment } from "./comments";
 import { getHome, getLetterRoom, listLetters } from "./queries";
 import {
   addLetterPerson,
@@ -338,6 +338,28 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     await uploadVersion(ppl.adv2!, id, { docx, pdf: await pdf() }); // the other advisor fixes
     await resubmitLetter(ppl.adv2!, id);
     expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId, ppl.rm2!.userId]);
+  });
+
+  it("marks come as a note, an X or a line, with a colour; a reviewer's draft can be moved, recoloured and removed, a published one cannot", async () => {
+    const id = await makeLetter("7");
+    await expect(createComment(ppl.rm!, id, { anchor: anchor(), kind: "NOTE" })).rejects.toThrow(/לכתוב את ההערה/); // a note needs words
+    await expect(createComment(ppl.rm!, id, { anchor: anchor(), body: "x", color: "red" })).rejects.toThrow(/הצבע/);
+    const x = await createComment(ppl.rm!, id, { anchor: anchor(), kind: "X", color: "#d32f2f" }); // a mark without words
+    const line = await createComment(ppl.rm!, id, { anchor: anchor(), kind: "LINE", points: [[0.1, 0.5], [0.6, 0.5]], color: "#1565c0" });
+    expect(x).toMatchObject({ kind: "X", body: "", color: "#d32f2f" });
+    expect(line).toMatchObject({ kind: "LINE", points: [[0.1, 0.5], [0.6, 0.5]] });
+    expect(line.width).toBeCloseTo(0.5);
+    expect(line.height).toBeGreaterThan(0);
+    await expect(createComment(ppl.rm!, id, { anchor: anchor(), kind: "LINE", points: [[0.1, 0.5], [1.4, 0.5]] })).rejects.toThrow();
+
+    const moved = await updateDraftComment(ppl.rm!, line.id, { points: [[0.2, 0.6], [0.7, 0.62]], color: "#2e7d32" });
+    expect(moved).toMatchObject({ color: "#2e7d32", points: [[0.2, 0.6], [0.7, 0.62]] });
+    await expect(updateDraftComment(ppl.adv!, line.id, { color: "#000000" })).rejects.toThrow(); // only the author
+    await deleteDraftComment(ppl.rm!, x.id);
+    await decideLetter(ppl.rm!, id, { seat: "RM", kind: "APPROVED" }); // publishes the line
+    await expect(updateDraftComment(ppl.rm!, line.id, { color: "#000000" })).rejects.toThrow(); // published now
+    const room = await getLetterRoom(ppl.adv!, id);
+    expect(room.comments.map((c) => c.kind)).toEqual(["LINE"]);
   });
 
   it("a reminder reaches whoever holds the letter; only the control manager and the VP can send it", async () => {
