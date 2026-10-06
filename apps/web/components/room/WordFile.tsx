@@ -5,7 +5,7 @@ import { btnLink, btnPrimary, btnSecondary, card, hint } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import type { LiveFileStatus } from "@/lib/letters/live-file";
 import { wordDesktopUrl } from "@/lib/m365/documents";
-import { openInWordAction, versionFromSharePointAction } from "./actions";
+import { openInWordAction, versionFromSharePointAction } from "@/app/(app)/letters/[id]/actions";
 
 /**
  * The letter's working file in SharePoint, for the advisor and the control manager. Shown only
