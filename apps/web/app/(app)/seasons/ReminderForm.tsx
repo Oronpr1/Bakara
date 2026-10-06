@@ -1,13 +1,16 @@
 import { BellRing } from "lucide-react";
+import { setReminderDaysAction } from "@/app/(app)/settings/seasons/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { btnSecondary, input } from "@/components/ui";
-import { setReminderAction } from "./actions";
 
-/** Control manager: how many days without a response before a reminder goes out. */
+/**
+ * How many days without a response before a reminder goes out. The season settings now live in
+ * /settings/seasons; this small form stays only while seasons/[id]/page.tsx still shows it.
+ */
 export function ReminderForm({ seasonId, days }: { seasonId: string; days: number }) {
   return (
     <ActionForm
-      action={setReminderAction}
+      action={setReminderDaysAction}
       submitLabel="שמור"
       submitAriaLabel="שמור מרווח תזכורת"
       submitIcon={<BellRing aria-hidden className="size-4" />}

@@ -6,14 +6,14 @@ import type { ActionResult } from "@/lib/action-result";
 import { formObject, runAction } from "@/lib/actions";
 import { createUser, setUserActive, setUserPassword, setUserRoles } from "@/lib/users/service";
 
-const roles = z.array(z.enum(ROLES)).min(1, { message: "צריך לבחור לפחות תפקיד אחד" });
+const roles = z.array(z.enum(ROLES), { message: "תפקיד לא מוכר" }).min(1, { message: "צריך לבחור לפחות תפקיד אחד" });
 const password = z.string({ message: "צריך לקבוע סיסמה" }).min(1, { message: "צריך לקבוע סיסמה" });
-const PATHS = ["/admin/users"];
+const PATHS = ["/settings/people", "/settings/tracks", "/settings/units"];
 
-export async function createUserAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+export async function createPersonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
     z.object({
-      name: z.string({ message: "צריך למלא שם" }).trim().min(1, { message: "צריך למלא שם" }).max(200),
+      name: z.string({ message: "צריך למלא שם" }).trim().min(1, { message: "צריך למלא שם" }).max(200, { message: "השם ארוך מדי" }),
       email: z.email({ message: "כתובת המייל לא תקינה" }),
       roles,
       password,
@@ -21,7 +21,7 @@ export async function createUserAction(_prev: ActionResult, form: FormData): Pro
     formObject(form, ["roles"]),
     (actor, d) => createUser(actor, d),
     PATHS,
-    "המשתמש נוסף",
+    "נוסף/ה למערכת",
   );
 }
 
@@ -50,6 +50,6 @@ export async function setPasswordAction(_prev: ActionResult, form: FormData): Pr
     formObject(form),
     (actor, d) => setUserPassword(actor, d.userId, d.password),
     PATHS,
-    "הסיסמה נקבעה. המשתמש יצטרך להיכנס מחדש.",
+    "הסיסמה נקבעה. אם היה מחובר, יצטרך להיכנס מחדש.",
   );
 }
