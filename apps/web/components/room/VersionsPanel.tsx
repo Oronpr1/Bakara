@@ -177,7 +177,7 @@ function UploadForm({ letterId, next }: { letterId: string; next: number }) {
         <PickedFile title="PDF" file={files.pdf} tone="text-bad" />
         <PickedFile title="Word (לא חובה)" file={files.docx} tone="text-accent" empty="לא צורף" />
       </ul>
-      <p className={hint}>אחרי כל תיקון ב-Word: קובץ ← שמירה בשם ← PDF, ומעלים כאן. בהמשך, עם תוסף Word, זה ייעשה בלחיצה אחת.</p>
+      <p className={hint}>אחרי כל תיקון ב-Word: קובץ ← שמירה בשם ← PDF, ומעלים כאן.</p>
       <label className="flex flex-col gap-1.5">
         <span className={label}>מה השתנה? (לא חובה)</span>
         <textarea name="note" rows={2} maxLength={2000} className={input} placeholder="למשל: תוקנו הימים ושכר הלימוד" />
