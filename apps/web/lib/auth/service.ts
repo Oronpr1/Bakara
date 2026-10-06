@@ -1,6 +1,7 @@
 import { DUMMY_HASH, getDb, schema, verifyPassword, type Db } from "@al/db";
 import type { Role } from "@al/domain";
 import { and, eq, gt, sql } from "drizzle-orm";
+import { ensurePolicy } from "../policy";
 import { keyedHash, newSessionToken, normalizeEmail } from "./crypto";
 
 const { users, sessions, auditEvents } = schema;
@@ -76,6 +77,7 @@ export async function loginWithPassword(
 
 export async function getSessionUser(token: string | undefined, db: Db = getDb()): Promise<SessionUser | null> {
   if (!token) return null;
+  await ensurePolicy(db); // the control manager's rules are in force for everything this request does
   const rows = await db
     .select({ sessionId: sessions.id, lastSeenAt: sessions.lastSeenAt, linkLetterId: sessions.linkLetterId, user: users })
     .from(sessions)

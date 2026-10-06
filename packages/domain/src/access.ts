@@ -2,9 +2,8 @@
 // so the server enforces exactly what the screens show. The control manager (ורוניקה) can act in
 // anyone's place; such actions record "on behalf of".
 import { flowView, seatsOf, type FlowInput, type FlowView, type Phase, type SeatKey } from "./flow";
-import type { Actor, Role } from "./types";
-
-const has = (actor: Actor, ...roles: Role[]) => roles.some((r) => actor.roles.includes(r));
+import { allowed } from "./policy";
+import type { Actor } from "./types";
 
 /** Actions that do not belong to a single letter. */
 export type GlobalAction =
@@ -17,17 +16,10 @@ export type GlobalAction =
 
 export function canGlobal(actor: Actor, action: GlobalAction): boolean {
   switch (action) {
-    case "MANAGE_USERS":
-      return has(actor, "ADMIN", "CONTROL_MANAGER");
-    case "MANAGE_RULES":
-      return has(actor, "ADMIN", "CONTROL_MANAGER");
-    case "MANAGE_SEASONS":
-    case "MANAGE_UNITS":
-      return has(actor, "CONTROL_MANAGER", "VP_REGISTRATION", "ADMIN");
     case "VIEW_ALL_LETTERS":
-      return has(actor, "ADMIN", "CONTROL_MANAGER", "VP_REGISTRATION");
-    case "CREATE_LETTER_REQUEST":
-      return has(actor, "CONTROL_MANAGER", "VP_REGISTRATION", "CONTROL_ADVISOR", "REGISTRATION_MANAGER");
+      return allowed(actor, "VIEW_ALL");
+    default:
+      return allowed(actor, action);
   }
 }
 
@@ -67,20 +59,20 @@ export interface Abilities {
 export function abilities(actor: Actor, input: FlowInput): Abilities {
   const { people, phase } = input;
   const view = flowView(input);
-  const cm = has(actor, "CONTROL_MANAGER");
-  const vp = has(actor, "VP_REGISTRATION");
-  const admin = has(actor, "ADMIN");
+  // What the control manager's rules (the policy) decide, by capability and not by role name.
+  const actsFor = allowed(actor, "ACT_FOR_OTHERS");
+  const vp = people.vpIds.includes(actor.userId);
   const advisor = actor.userId === people.advisorId || people.extraAdvisorIds.includes(actor.userId);
   const rm = people.rmIds.includes(actor.userId);
   const academic = input.academics.includes(actor.userId);
-  const inWorkspace = advisor || rm || cm || vp;
-  const seeAll = cm || vp || admin;
+  const inWorkspace = advisor || rm || actsFor || vp;
+  const seeAll = allowed(actor, "VIEW_ALL");
 
   const canSee = seeAll || advisor || rm || academic;
   const commentPhase: Phase[] = ["REVIEW", "ACADEMIC", "FINAL"];
   // The advisor holds the letter in DRAFT and while fixing; the control manager can always upload.
   const advisorTurn = advisor && (phase === "DRAFT" || view.holder.kind === "ADVISOR") && phase !== "APPROVED";
-  const uploadVersion = canSee && phase !== "APPROVED" && (advisorTurn || cm);
+  const uploadVersion = canSee && phase !== "APPROVED" && (advisorTurn || actsFor);
 
   const decide: DecidableSeat[] = [];
   if (canSee && !view.fixing) {
@@ -88,13 +80,11 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
       if (seat.turn !== "now") continue;
       if (seat.role === "ACADEMIC") {
         if (seat.holderIds.includes(actor.userId)) decide.push({ seat: seat.key, onBehalfOf: null });
-      } else if (seat.role === "RM") {
-        if (rm) decide.push({ seat: seat.key, onBehalfOf: null });
-        else if (cm) decide.push({ seat: seat.key, onBehalfOf: seat.holderIds[0] ?? null });
-      } else if (seat.role === "VP" || seat.role === "FINAL") {
-        if (vp) decide.push({ seat: seat.key, onBehalfOf: null });
-        else if (cm) decide.push({ seat: seat.key, onBehalfOf: seat.holderIds[0] ?? null });
-      } else if (seat.role === "CONTROL" && cm) decide.push({ seat: seat.key, onBehalfOf: null });
+      } else if (seat.holderIds.includes(actor.userId)) {
+        decide.push({ seat: seat.key, onBehalfOf: null });
+      } else if (actsFor) {
+        decide.push({ seat: seat.key, onBehalfOf: seat.holderIds[0] ?? null });
+      }
     }
   }
 
@@ -107,21 +97,21 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
   return {
     view: canSee,
     comment: canSee && commentPhase.includes(phase),
-    handleComments: canSee && (advisor || cm) && phase !== "APPROVED",
+    handleComments: canSee && (advisor || actsFor) && phase !== "APPROVED",
     uploadVersion,
-    submit: canSee && phase === "DRAFT" && (advisor || cm) && view.blockers.length === 0,
-    resubmit: canSee && view.fixing && input.openComments === 0 && (advisor || cm),
+    submit: canSee && phase === "DRAFT" && (advisor || actsFor) && view.blockers.length === 0,
+    resubmit: canSee && view.fixing && input.openComments === 0 && (advisor || actsFor),
     decide,
     retract,
     sendToAcademic: canSee && phase === "ACADEMIC" && inWorkspace,
-    skipAcademic: canSee && phase === "ACADEMIC" && (cm || vp),
-    resetApprovals: canSee && commentPhase.includes(phase) && (cm || vp),
-    reopen: canSee && phase === "APPROVED" && (cm || vp),
-    markInGilboa: canSee && phase === "APPROVED" && !input.inGilboa && (advisor || cm),
-    reassignAdvisor: canSee && cm,
-    remind: canSee && (cm || vp) && phase !== "APPROVED" && phase !== "DRAFT",
-    overrideOpenComments: canSee && cm,
-    actsForOthers: cm && !advisor,
+    skipAcademic: canSee && phase === "ACADEMIC" && allowed(actor, "SKIP_ACADEMIC"),
+    resetApprovals: canSee && commentPhase.includes(phase) && allowed(actor, "RESET_APPROVALS"),
+    reopen: canSee && phase === "APPROVED" && allowed(actor, "REOPEN"),
+    markInGilboa: canSee && phase === "APPROVED" && !input.inGilboa && (advisor || actsFor),
+    reassignAdvisor: canSee && allowed(actor, "REASSIGN_ADVISOR"),
+    remind: canSee && allowed(actor, "REMIND") && phase !== "APPROVED" && phase !== "DRAFT",
+    overrideOpenComments: canSee && allowed(actor, "OVERRIDE_OPEN_COMMENTS"),
+    actsForOthers: actsFor && !advisor,
     flow: view,
   };
 }

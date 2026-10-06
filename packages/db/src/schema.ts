@@ -299,6 +299,14 @@ export const commentReplies = pgTable(
   (t) => [index("comment_replies_comment_idx").on(t.commentId, t.createdAt)],
 );
 
+/** The control manager's rules: which roles may do each of the bigger things (see domain/policy.ts). */
+export const rules = pgTable("rules", {
+  capability: text("capability").primaryKey(),
+  roles: roleEnum("roles").array().notNull().default(sql`'{}'`),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Append-only history of everything that happened. Never updated or deleted by the app. */
 export const auditEvents = pgTable(
   "audit_events",
