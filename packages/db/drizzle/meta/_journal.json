@@ -50,6 +50,13 @@
       "when": 1791323570891,
       "tag": "0006_flow_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791324289921,
+      "tag": "0007_rules",
+      "breakpoints": true
     }
   ]
 }

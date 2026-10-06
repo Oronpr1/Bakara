@@ -13,7 +13,7 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-/** Moves the whole system to another season. A season page follows; other pages just reload. */
+/** Moves the whole system to another season: the home screen of that season. */
 export async function switchSeasonAction(form: FormData) {
   await requireUser();
   const seasonId = z.uuid().safeParse(form.get("seasonId"));
@@ -25,7 +25,5 @@ export async function switchSeasonAction(form: FormData) {
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });
-  const from = String(form.get("from") ?? "/");
-  if (from.startsWith("/seasons/") || from.startsWith("/letters/") || from === "/season") redirect("/season");
-  redirect(from.startsWith("/") && !from.startsWith("//") ? from : "/");
+  redirect("/");
 }

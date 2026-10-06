@@ -1,13 +1,15 @@
 import { DUMMY_HASH, getDb, schema, verifyPassword, type Db } from "@al/db";
 import type { Role } from "@al/domain";
 import { and, eq, gt, sql } from "drizzle-orm";
+import { ensurePolicy } from "../policy";
 import { keyedHash, newSessionToken, normalizeEmail } from "./crypto";
 
 const { users, sessions, auditEvents } = schema;
 
 export const MAX_FAILED_LOGINS = 5;
 export const LOCK_MS = 15 * 60 * 1000;
-export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+/** Staff stay signed in on their device for a month (a link in an email must open the letter, not a login). */
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface SessionUser {
   id: string;
@@ -75,6 +77,7 @@ export async function loginWithPassword(
 
 export async function getSessionUser(token: string | undefined, db: Db = getDb()): Promise<SessionUser | null> {
   if (!token) return null;
+  await ensurePolicy(db); // the control manager's rules are in force for everything this request does
   const rows = await db
     .select({ sessionId: sessions.id, lastSeenAt: sessions.lastSeenAt, linkLetterId: sessions.linkLetterId, user: users })
     .from(sessions)

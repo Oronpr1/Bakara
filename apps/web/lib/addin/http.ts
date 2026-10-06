@@ -1,3 +1,4 @@
+import { ensurePolicy } from "../policy";
 import type { Actor } from "@al/domain";
 import { AppError, userMessage } from "../errors";
 import { TokenError, userFromBearer, type AddinUser } from "../auth/entra";
@@ -67,6 +68,7 @@ export async function withAddinUser(
     const origin = req.headers.get("origin");
     if (origin && origin !== addinOrigin()) throw new AppError("FORBIDDEN", "הבקשה הגיעה ממקור לא מורשה");
     const user = await userFromBearer(req.headers.get("authorization"));
+    await ensurePolicy();
     return await handler(user, { userId: user.id, roles: user.roles });
   } catch (err) {
     return errorResponse(req, err, methods);

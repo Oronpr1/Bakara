@@ -26,6 +26,13 @@ async function clientIp(): Promise<string | null> {
   );
 }
 
+/** Where to go after signing in: the page the person asked for, if it is one of ours. */
+function safeNext(value: FormDataEntryValue | null): string {
+  const next = String(value ?? "");
+  if (!next.startsWith("/") || next.startsWith("//") || next.includes("\\") || next.startsWith("/login") || next.startsWith("/a/")) return "/";
+  return next;
+}
+
 export async function loginAction(_prev: LoginState, form: FormData): Promise<LoginState> {
   const email = String(form.get("email") ?? "").trim();
   const password = String(form.get("password") ?? "");
@@ -39,5 +46,5 @@ export async function loginAction(_prev: LoginState, form: FormData): Promise<Lo
   if (!result.ok)
     return { error: "המייל או הסיסמה שגויים. אחרי 5 ניסיונות כושלים החשבון ננעל ל-15 דקות.", email };
   await setSessionCookie(result.token, result.expiresAt);
-  redirect("/");
+  redirect(safeNext(form.get("next")));
 }
