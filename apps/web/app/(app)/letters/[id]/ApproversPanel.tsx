@@ -90,7 +90,7 @@ export function ApproversPanel({
 }) {
   const { row, people, names } = detail;
   const activeIds = (slot: ApproverSlot) => detail.assignments.filter((a) => a.slot === slot && !a.removedAt).map((a) => a.userId);
-  const canRemove = (slot: ApproverSlot) => can("REMOVE_APPROVER") || (slot === "ACADEMIC" && can("SET_ACADEMIC_APPROVERS"));
+  const canRemove = (slot: ApproverSlot) => can("REMOVE_APPROVER") || (slot === "ACADEMIC" && can("SET_ACADEMIC_APPROVERS") && stageIndex(row.stage) < stageIndex("ACADEMIC_ROUND"));
 
   const manage: React.ReactNode[] = [];
   if (can("SET_REGISTRATION_MANAGER"))

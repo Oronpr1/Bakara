@@ -1,16 +1,20 @@
 "use client";
 
-import { CalendarRange, Inbox, Users } from "lucide-react";
+import { Building2, CalendarRange, Inbox, Settings, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const ICONS = { home: Inbox, seasons: CalendarRange, users: Users };
+const ICONS = { home: Inbox, seasons: CalendarRange, units: Building2, users: Users, settings: Settings };
 
 /** The main navigation, marking the section the user is in (aria-current + underline). */
 export function NavLinks({ items }: { items: { href: string; label: string; icon: keyof typeof ICONS }[] }) {
   const path = usePathname();
   const isActive = (href: string) =>
-    href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`) || (href === "/seasons" && path.startsWith("/letters/"));
+    href === "/"
+      ? path === "/"
+      : href === "/season"
+        ? path.startsWith("/seasons/") || path.startsWith("/letters/") || path === "/season"
+        : path === href || path.startsWith(`${href}/`);
   return (
     <ul className="-mb-px flex gap-1 overflow-x-auto">
       {items.map((n) => {

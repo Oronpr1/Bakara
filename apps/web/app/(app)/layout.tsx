@@ -3,7 +3,9 @@ import { LogOut, Mail } from "lucide-react";
 import Link from "next/link";
 import { NavLinks } from "@/components/NavLinks";
 import { actorOf } from "@/lib/actor";
+import { SeasonSwitcher } from "@/components/SeasonSwitcher";
 import { requireUser } from "@/lib/auth/session";
+import { currentSeason } from "@/lib/season-context";
 import { logoutAction } from "./actions";
 
 function initials(name: string) {
@@ -13,10 +15,13 @@ function initials(name: string) {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  const { current, seasons } = await currentSeason();
   const nav = [
     { href: "/", label: "העבודה שלי", icon: "home" as const },
-    { href: "/seasons", label: "עונות רישום", icon: "seasons" as const },
+    { href: "/season", label: "מכתבי העונה", icon: "seasons" as const },
+    ...(canGlobal(actorOf(user), "MANAGE_UNITS") ? [{ href: "/admin/units", label: "קמפוסים ופקולטות", icon: "units" as const }] : []),
     ...(canGlobal(actorOf(user), "MANAGE_USERS") ? [{ href: "/admin/users", label: "משתמשים", icon: "users" as const }] : []),
+    ...(canGlobal(actorOf(user), "MANAGE_SEASONS") ? [{ href: "/seasons", label: "הגדרות עונות", icon: "settings" as const }] : []),
   ];
   const roles = user.roles.map((r) => ROLE_LABELS[r]).join(", ");
   return (
@@ -36,6 +41,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="text-lg font-bold">מכתבי קבלה</span>
           </Link>
           <div className="flex items-center gap-3">
+            {current && (
+              <SeasonSwitcher
+                seasons={seasons.map((s) => ({ id: s.id, name: s.name, archived: s.status === "ARCHIVED" }))}
+                currentId={current.id}
+              />
+            )}
             <span className="hidden flex-col items-end leading-tight sm:flex">
               <span className="text-sm font-semibold">{user.name}</span>
               <span className="text-xs text-brand-fg/70">{roles}</span>

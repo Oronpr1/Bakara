@@ -49,6 +49,7 @@ export function pendingApprovers(letter: LetterState) {
 export type GateBlocker =
   | { kind: "PENDING_APPROVAL"; userId: string; slot: ApproverSlot }
   | { kind: "OPEN_COMMENTS"; count: number }
+  | { kind: "NO_ACADEMIC_APPROVER" }
   | { kind: "NO_VERSION" };
 
 /**
@@ -63,6 +64,10 @@ export function roundBlockers(letter: LetterState): GateBlocker[] {
     userId: a.userId,
     slot: a.slot,
   }));
+  // The academic round never completes on its own with nobody in it: someone from the letter's
+  // workspace must choose an academic approver first. Only a forced advance skips this.
+  if (letter.stage === "ACADEMIC_ROUND" && activeApprovers(letter, ["ACADEMIC"]).length === 0)
+    blockers.push({ kind: "NO_ACADEMIC_APPROVER" });
   const open = openCommentCount(letter);
   if (open > 0) blockers.push({ kind: "OPEN_COMMENTS", count: open });
   return blockers;
@@ -71,7 +76,8 @@ export function roundBlockers(letter: LetterState): GateBlocker[] {
 /**
  * The stage the letter should move to on its own, or null when it stays put.
  * Called after every approval, comment status change, or approver removal. Rounds with
- * no active approvers left are skipped.
+ * no active approvers left are skipped, except the academic round, which waits for an
+ * academic approver to be chosen.
  */
 export function autoAdvance(letter: LetterState): Stage | null {
   let stage = letter.stage;
@@ -90,6 +96,7 @@ export const ACTIONS = [
   "INITIAL_APPROVE", // מנהלת בקרה: אישור לסבב
   "RETURN_FOR_CHANGES", // מנהלת בקרה: החזרה לתיקון
   "FORCE_ADVANCE", // מנהלת בקרה: העברה לשלב הבא למרות חוסמים, עם סיבה
+  "SKIP_ACADEMIC", // מנהלת בקרה / סמנכ"ל: דילוג על הסבב האקדמי, בסמכותם, הסיבה לא חובה
   "FINAL_APPROVE", // מנהלת בקרה: מאושר להפצה
   "REOPEN", // מנהלת בקרה: פתיחה מחדש של מכתב מאושר
 ] as const;
@@ -158,6 +165,9 @@ export function transition(
       if (letter.latestVersion < 1) throw new WorkflowError("NO_VERSION", "Upload a version first");
       return settle(next);
     }
+    case "SKIP_ACADEMIC":
+      need("ACADEMIC_ROUND");
+      return "FINAL_REVIEW";
     case "REOPEN":
       need("APPROVED");
       if (!opts.reason?.trim()) throw new WorkflowError("REASON_REQUIRED", "A reason is required");

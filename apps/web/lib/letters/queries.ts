@@ -1,6 +1,7 @@
 // Read side for the screens. Mutations live in service.ts / comments.ts; nothing here writes.
 import { getDb, schema, type Db } from "@al/db";
 import {
+  activeApprovers,
   canGlobal,
   canOnLetter,
   isOpenComment,
@@ -149,7 +150,7 @@ export async function listSeasonLetters(actor: Actor, seasonId: string, db: Db =
   return listItems(actor, rows, db);
 }
 
-export type QueueReason = "APPROVE" | "INITIAL_REVIEW" | "FINAL_REVIEW" | "DRAFT" | "OPEN_COMMENTS";
+export type QueueReason = "APPROVE" | "INITIAL_REVIEW" | "FINAL_REVIEW" | "DRAFT" | "OPEN_COMMENTS" | "CHOOSE_ACADEMIC";
 
 export const QUEUE_REASON_LABELS: Record<QueueReason, string> = {
   APPROVE: "ממתין לאישורך",
@@ -157,6 +158,7 @@ export const QUEUE_REASON_LABELS: Record<QueueReason, string> = {
   FINAL_REVIEW: "ממתין לאישור סופי",
   DRAFT: "בהכנה: להעלות גרסה ולשלוח לבדיקה",
   OPEN_COMMENTS: "יש הערות לטיפול",
+  CHOOSE_ACADEMIC: "צריך לבחור גורם אקדמי",
 };
 
 /** Why this letter is in the actor's work queue, or null when it is not. */
@@ -164,6 +166,12 @@ export function queueReason(actor: Actor, state: LetterState): QueueReason | nul
   if (canOnLetter(actor, "APPROVE", state)) return "APPROVE";
   if (canOnLetter(actor, "INITIAL_APPROVE", state)) return "INITIAL_REVIEW";
   if (canOnLetter(actor, "FINAL_APPROVE", state)) return "FINAL_REVIEW";
+  if (
+    state.stage === "ACADEMIC_ROUND" &&
+    activeApprovers(state, ["ACADEMIC"]).length === 0 &&
+    canOnLetter(actor, "SET_ACADEMIC_APPROVERS", state)
+  )
+    return "CHOOSE_ACADEMIC";
   if (state.advisorId === actor.userId && state.stage !== "APPROVED") {
     if (state.stage === "DRAFT") return "DRAFT";
     if (state.comments.some((c) => isOpenComment(c.status))) return "OPEN_COMMENTS";
@@ -172,12 +180,12 @@ export function queueReason(actor: Actor, state: LetterState): QueueReason | nul
 }
 
 /** Letters in active seasons that wait for the actor, grouped by season (newest first). */
-export async function workQueue(actor: Actor, db: Db = getDb()) {
+export async function workQueue(actor: Actor, seasonId?: string, db: Db = getDb()) {
   const rows = await db
     .select({ letter: letterRequests, season: seasons })
     .from(letterRequests)
     .innerJoin(seasons, eq(seasons.id, letterRequests.seasonId))
-    .where(eq(seasons.status, "ACTIVE"))
+    .where(seasonId ? eq(seasons.id, seasonId) : eq(seasons.status, "ACTIVE"))
     .orderBy(desc(seasons.createdAt), asc(letterRequests.dueDate), asc(letterRequests.trackName));
   const items = await listItems(
     actor,

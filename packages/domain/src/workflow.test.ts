@@ -125,7 +125,7 @@ describe("approval rounds", () => {
     expect(autoAdvance(l)).toBe("FINAL_REVIEW");
   });
 
-  it("an academic round with nobody left is skipped", () => {
+  it("the academic round waits for someone to choose an academic approver", () => {
     const l = letter({
       stage: "REGISTRATION_ROUND",
       approvers: [
@@ -137,7 +137,41 @@ describe("approval rounds", () => {
         { userId: "vp", slot: "VP_REGISTRATION", versionNumber: 1, at },
       ],
     });
-    expect(autoAdvance(l)).toBe("FINAL_REVIEW");
+    expect(autoAdvance(l)).toBe("ACADEMIC_ROUND");
+    const waiting = { ...l, stage: "ACADEMIC_ROUND" as const };
+    expect(autoAdvance(waiting)).toBeNull();
+    expect(roundBlockers(waiting)).toEqual([{ kind: "NO_ACADEMIC_APPROVER" }]);
+    // Once one is chosen and approves, the letter goes to the final review.
+    const chosen = {
+      ...waiting,
+      approvers: [...waiting.approvers, { userId: "ac1", slot: "ACADEMIC" as const }],
+    };
+    expect(autoAdvance(chosen)).toBeNull();
+    expect(
+      autoAdvance({ ...chosen, approvals: [...chosen.approvals, { userId: "ac1", slot: "ACADEMIC", versionNumber: 1, at }] }),
+    ).toBe("FINAL_REVIEW");
+    // The control manager can still force it past, with a reason.
+    expect(transition(waiting, "FORCE_ADVANCE", { reason: "אין גורם אקדמי למסלול" })).toBe("FINAL_REVIEW");
+  });
+
+  it("the control manager or the VP may skip the academic round, with or without a reason", () => {
+    const l = letter({ stage: "ACADEMIC_ROUND", approvers: [{ userId: "rm", slot: "REGISTRATION_MANAGER" }] });
+    expect(canOnLetter(cm, "SKIP_ACADEMIC", l)).toBe(true);
+    expect(canOnLetter(vp, "SKIP_ACADEMIC", l)).toBe(true);
+    expect(canOnLetter(advisor, "SKIP_ACADEMIC", l)).toBe(false);
+    expect(canOnLetter(cm, "SKIP_ACADEMIC", letter({ stage: "REGISTRATION_ROUND" }))).toBe(false);
+    expect(transition(l, "SKIP_ACADEMIC")).toBe("FINAL_REVIEW");
+    expect(() => transition(letter({ stage: "REGISTRATION_ROUND" }), "SKIP_ACADEMIC")).toThrow(WorkflowError);
+  });
+
+  it("anyone in the letter's workspace may choose the academic approver, until final review", () => {
+    const rm: Actor = { userId: "rm", roles: ["REGISTRATION_MANAGER"] };
+    for (const stage of ["DRAFT", "REGISTRATION_ROUND", "ACADEMIC_ROUND"] as const) {
+      for (const who of [advisor, rm, vp, cm]) expect(canOnLetter(who, "SET_ACADEMIC_APPROVERS", letter({ stage }))).toBe(true);
+    }
+    expect(canOnLetter(advisor, "SET_ACADEMIC_APPROVERS", letter({ stage: "FINAL_REVIEW" }))).toBe(false);
+    expect(canOnLetter(acad1, "SET_ACADEMIC_APPROVERS", letter({ stage: "ACADEMIC_ROUND" }))).toBe(false);
+    expect(canOnLetter(stranger, "SET_ACADEMIC_APPROVERS", letter({ stage: "ACADEMIC_ROUND" }))).toBe(false);
   });
 
   it("approvals stay valid after a new version, flagged as changed", () => {

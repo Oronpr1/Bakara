@@ -5,6 +5,7 @@ import { hasApproved, roundOfSlot, stageIndex } from "./workflow";
 export type GlobalAction =
   | "MANAGE_USERS"
   | "MANAGE_SEASONS" // יצירת עונה, "צור על בסיס עונה קודמת"
+  | "MANAGE_UNITS" // מנהל רישום לכל קמפוס+פקולטה, ייבוא מסלולים
   | "SET_REMINDER_INTERVAL"
   | "CREATE_LETTER_REQUEST"
   | "VIEW_ALL_LETTERS"; // דשבורד מלא
@@ -22,6 +23,7 @@ export type LetterAction =
   | "APPROVE"
   | "FINAL_APPROVE"
   | "FORCE_ADVANCE"
+  | "SKIP_ACADEMIC"
   | "REOPEN"
   | "SET_REGISTRATION_MANAGER"
   | "SET_ACADEMIC_APPROVERS"
@@ -41,6 +43,8 @@ export function canGlobal(actor: Actor, action: GlobalAction): boolean {
     case "MANAGE_SEASONS":
     case "VIEW_ALL_LETTERS":
       return has(actor, "ADMIN", "CONTROL_MANAGER", "VP_REGISTRATION");
+    case "MANAGE_UNITS":
+      return has(actor, "CONTROL_MANAGER", "VP_REGISTRATION");
     case "SET_REMINDER_INTERVAL":
       return has(actor, "CONTROL_MANAGER");
     case "CREATE_LETTER_REQUEST":
@@ -98,13 +102,20 @@ export function canOnLetter(actor: Actor, action: LetterAction, letter: LetterSt
       return cm && letter.stage === "FINAL_REVIEW";
     case "FORCE_ADVANCE":
       return cm && open && letter.stage !== "FINAL_REVIEW";
+    case "SKIP_ACADEMIC":
+      // בסמכות מנהלת הבקרה והסמנכ"ל, מהסיבות שלהם.
+      return top && letter.stage === "ACADEMIC_ROUND";
     case "REOPEN":
       return cm && letter.stage === "APPROVED";
     case "SET_REGISTRATION_MANAGER":
       // היועצת בוחרת בתחילת הדרך; סמנכ"ל או מנהלת בקרה יכולים להחליף בכל שלב.
       return open && (top || (advisor && letter.stage === "DRAFT"));
-    case "SET_ACADEMIC_APPROVERS":
-      return open && (top || (advisor && stageIndex(letter.stage) < stageIndex("ACADEMIC_ROUND")));
+    case "SET_ACADEMIC_APPROVERS": {
+      // כל אנשי סביבת העבודה של המסלול (יועצת, מנהל רישום, סמנכ"ל, מנהלת בקרה) בוחרים גורם אקדמי,
+      // עד לאישור הסופי. הגורמים האקדמיים עצמם לא בוחרים זה את זה.
+      const workspace = advisor || top || activeSlotsOf(actor, letter).some((s) => s !== "ACADEMIC");
+      return open && stageIndex(letter.stage) < stageIndex("FINAL_REVIEW") && workspace;
+    }
     case "REMOVE_APPROVER":
       return open && top;
     case "CHANGE_ADVISOR":

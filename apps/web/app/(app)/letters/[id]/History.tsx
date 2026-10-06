@@ -35,6 +35,7 @@ const TRANSITION_LABELS: Record<string, string> = {
   INITIAL_APPROVE: "אישור לסבב",
   RETURN_FOR_CHANGES: "החזרה לתיקון",
   FORCE_ADVANCE: "העברת שלב ידנית",
+  SKIP_ACADEMIC: "דילוג על הסבב האקדמי",
   FINAL_APPROVE: "אישור סופי",
   REOPEN: "פתיחה מחדש",
 };
@@ -60,6 +61,7 @@ const EVENT_ICONS: Record<string, [LucideIcon, Tone]> = {
   INITIAL_APPROVE: [Check, "good"],
   RETURN_FOR_CHANGES: [Undo2, "warn"],
   FORCE_ADVANCE: [FastForward, "warn"],
+  SKIP_ACADEMIC: [FastForward, "warn"],
   FINAL_APPROVE: [BadgeCheck, "good"],
   REOPEN: [RotateCcw, "warn"],
 };

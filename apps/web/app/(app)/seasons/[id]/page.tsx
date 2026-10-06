@@ -89,6 +89,11 @@ export default async function SeasonPage({
           <span className="tabular">{letters.length}</span> דרישות
         </p>
 
+        {canGlobal(actor, "MANAGE_UNITS") && (
+          <Link href={`/seasons/${season.id}/import`} className="mt-2 text-sm font-semibold text-accent hover:underline">
+            ייבוא מסלולים מקובץ
+          </Link>
+        )}
         {canCreate && (
           <details className="group mt-3 sm:mt-0">
             <summary
@@ -113,9 +118,6 @@ export default async function SeasonPage({
                 faculties={faculties}
                 defaultAdvisorId={user.roles.includes("CONTROL_ADVISOR") ? user.id : undefined}
                 advisors={usersWithRole(people, "CONTROL_ADVISOR")}
-                registrationManagers={usersWithRole(people, "REGISTRATION_MANAGER")}
-                vps={usersWithRole(people, "VP_REGISTRATION")}
-                academics={usersWithRole(people, "ACADEMIC_APPROVER")}
               />
             </section>
           </details>
