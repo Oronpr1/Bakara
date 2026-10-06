@@ -23,6 +23,19 @@
   --alpr-draft-fill: rgb(11 107 203 / 0.14);
   --alpr-page-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
   --alpr-radius: 6px;
+  /* stickers sit on the white page, so they keep their colours in dark mode */
+  --alpr-sticker: #ffd23f;
+  --alpr-sticker-fg: #3d2c00;
+  --alpr-sticker-fold: #d9a400;
+  --alpr-sticker-area: rgb(255 196 0 / 0.16);
+  --alpr-sticker-area-strong: rgb(255 196 0 / 0.3);
+  --alpr-sticker-edge: #d9a400;
+  --alpr-sticker-done: #cdeed8;
+  --alpr-sticker-done-fg: #17603a;
+  --alpr-sticker-done-fold: #8fcfa5;
+  --alpr-sticker-done-area: rgb(48 164 108 / 0.1);
+  --alpr-lens-ring: #ffffff;
+  --alpr-overlay-bg: rgb(28 32 36 / 0.8);
 
   display: flex;
   flex-direction: column;
@@ -136,14 +149,27 @@
   white-space: nowrap;
 }
 
-.alpr-scroller {
+.alpr-stage {
   position: relative;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+.alpr-scroller {
+  position: absolute;
+  inset: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /* a scrollbar appearing must not change the width (and so the fit-width zoom) */
+  scrollbar-gutter: stable;
   /* the browser keeps panning; pinch zoom is ours */
   touch-action: pan-x pan-y;
+}
+.alpr-root[data-magnifier] .alpr-scroller {
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .alpr-pages {
   position: relative;
@@ -193,6 +219,9 @@
   background: var(--alpr-resolved-fill);
   opacity: 0.7;
 }
+.alpr-box[data-draft] {
+  border-style: dashed;
+}
 .alpr-box[data-selected] {
   border: 3px solid var(--alpr-selected);
   background: var(--alpr-selected-fill);
@@ -233,12 +262,296 @@
   border-style: solid;
 }
 
+/* ---- stickers (commentStyle="sticker") ---- */
+.alpr-note {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.alpr-note[data-open],
+.alpr-note[data-selected] {
+  z-index: 2;
+}
+.alpr-note[data-open] {
+  z-index: 3;
+}
+.alpr-note-area {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--alpr-sticker-area);
+  box-shadow: inset 0 -2px 0 var(--alpr-sticker-edge);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.alpr-note[data-resolved] .alpr-note-area {
+  background: var(--alpr-sticker-done-area);
+  box-shadow: inset 0 -1px 0 var(--alpr-sticker-done-fold);
+}
+.alpr-note[data-draft] .alpr-note-area {
+  box-shadow: none;
+  outline: 2px dashed var(--alpr-sticker-edge);
+  outline-offset: 1px;
+}
+.alpr-note[data-open] .alpr-note-area,
+.alpr-note[data-selected] .alpr-note-area {
+  background: var(--alpr-sticker-area-strong);
+  box-shadow: 0 0 0 2px var(--alpr-sticker-edge);
+}
+.alpr-sticker {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--alpr-sticker-fg);
+  pointer-events: auto;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.3)) drop-shadow(0 2px 4px rgb(0 0 0 / 0.14));
+  transition: transform 0.12s;
+}
+/* a 44px touch target around the 28px note */
+.alpr-sticker::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.alpr-sticker-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--alpr-sticker);
+  font: 700 12px/1 system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  /* the folded corner: the bottom-left corner is cut off… */
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 9px 100%, 0 calc(100% - 9px));
+}
+/* …and its flap is drawn folded back over the note */
+.alpr-sticker-face::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(to top right, transparent 50%, var(--alpr-sticker-fold) 50%);
+}
+.alpr-note[data-resolved] .alpr-sticker {
+  color: var(--alpr-sticker-done-fg);
+}
+.alpr-note[data-resolved] .alpr-sticker-face {
+  background: var(--alpr-sticker-done);
+}
+.alpr-note[data-resolved] .alpr-sticker-face::after {
+  background: linear-gradient(to top right, transparent 50%, var(--alpr-sticker-done-fold) 50%);
+}
+.alpr-sticker-check {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 14px;
+  height: 14px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--alpr-sticker-done-fg);
+  color: #fff;
+}
+.alpr-note[data-draft] .alpr-sticker-face {
+  clip-path: none;
+  background: rgb(255 210 63 / 0.55);
+  outline: 2px dashed var(--alpr-sticker-fg);
+  outline-offset: -2px;
+}
+.alpr-note[data-draft] .alpr-sticker-face::after {
+  display: none;
+}
+.alpr-sticker:hover,
+.alpr-note[data-open] .alpr-sticker {
+  transform: scale(1.12);
+}
+.alpr-note[data-selected] .alpr-sticker {
+  transform: scale(1.18);
+}
+.alpr-note[data-selected] .alpr-sticker-face {
+  box-shadow: inset 0 0 0 2px var(--alpr-sticker-fg);
+}
+.alpr-sticker:focus-visible {
+  outline: 2px solid var(--alpr-focus);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.alpr-overlay[data-drawing] .alpr-sticker,
+.alpr-overlay[data-drawing] .alpr-note-area {
+  pointer-events: none;
+}
+.alpr-preview {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--alpr-sticker-edge);
+  border-radius: 8px;
+  background: #fffbea;
+  color: #2b2100;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: start;
+  pointer-events: none;
+}
+.alpr-note[data-resolved] .alpr-preview {
+  border-color: var(--alpr-sticker-done-fold);
+  background: #f1fbf4;
+  color: #133d27;
+}
+.alpr-preview-head {
+  font-size: 12px;
+}
+.alpr-preview-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* ---- magnifier ---- */
+.alpr-lens {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  /* a ring drawn outside the canvas, so the canvas keeps its exact pixel size */
+  box-shadow:
+    0 0 0 3px var(--alpr-lens-ring),
+    0 0 0 4px rgb(0 0 0 / 0.25),
+    0 10px 28px rgb(0 0 0 / 0.35);
+  background: var(--alpr-bg);
+  will-change: transform;
+}
+.alpr-lens[hidden] {
+  display: none;
+}
+.alpr-lens-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.alpr-lens-power {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--alpr-overlay-bg);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- floating page pill and mode bar ---- */
+.alpr-pill {
+  position: absolute;
+  top: 10px;
+  inset-inline-end: 22px;
+  z-index: 4;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--alpr-overlay-bg);
+  color: #fff;
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.alpr-pill[data-visible] {
+  opacity: 1;
+}
+.alpr-modebar {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 16px);
+  box-sizing: border-box;
+  padding: 3px;
+  padding-inline-start: 14px;
+  border-radius: 999px;
+  background: var(--alpr-surface);
+  color: var(--alpr-fg);
+  box-shadow:
+    0 0 0 1px var(--alpr-border),
+    0 6px 18px rgb(0 0 0 / 0.18);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.alpr-modebar .alpr-btn {
+  border-radius: 999px;
+}
+.alpr-modebar-text {
+  margin-inline-end: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--alpr-muted);
+  font-size: 13px;
+}
+.alpr-modebar-done {
+  padding: 0 14px;
+  background: var(--alpr-accent);
+  color: var(--alpr-accent-fg);
+  font-weight: 600;
+}
+.alpr-modebar-power {
+  min-width: 3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* touch: 44px targets */
+@media (pointer: coarse) {
+  .alpr-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+  .alpr-page-input {
+    height: 40px;
+  }
+}
+
 @media (max-width: 600px) {
   .alpr-btn-text {
     display: none;
   }
   .alpr-toolbar {
-    gap: 4px 8px;
-    padding: 4px 8px;
+    gap: 2px 6px;
+    padding: 4px 6px;
+  }
+  .alpr-group {
+    gap: 0;
+  }
+}
+@media (max-width: 480px) {
+  /* a phone shows the zoom in the page itself; the % would push the tools to a second row */
+  .alpr-zoom {
+    display: none;
+  }
+  .alpr-page-input {
+    width: 2.6em;
   }
 }

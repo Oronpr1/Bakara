@@ -148,10 +148,62 @@ export function renderPageCanvas(
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.floor(viewport.width));
     canvas.height = Math.max(1, Math.floor(viewport.height));
-    const task = page.render({ canvas, viewport });
-    ctx.onCancel(() => task.cancel());
+    return paintOrRelease(canvas, page.render({ canvas, viewport }), ctx);
+  });
+}
+
+/**
+ * Await a pdf.js render into `canvas`; if it fails or was cancelled, free the
+ * canvas's backing store at once (iOS Safari counts every live canvas against
+ * a small total, and does not give it back until GC).
+ */
+async function paintOrRelease(
+  canvas: HTMLCanvasElement,
+  task: { promise: Promise<unknown>; cancel(): void },
+  ctx: { readonly cancelled: boolean; onCancel(fn: () => void): void },
+): Promise<HTMLCanvasElement> {
+  ctx.onCancel(() => task.cancel());
+  try {
     await task.promise;
-    return canvas;
+  } catch (err) {
+    releaseCanvas(canvas);
+    throw err;
+  }
+  if (ctx.cancelled) {
+    releaseCanvas(canvas);
+    throw new Error("cancelled");
+  }
+  return canvas;
+}
+
+/** Drop a canvas's pixels now rather than at garbage collection. */
+export function releaseCanvas(canvas: HTMLCanvasElement | null | undefined): void {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
+/**
+ * Raster one tile of a page: the box `rect` (device px) of the page rendered
+ * at `scale` device pixels per PDF point. Only the tile's pixels are
+ * allocated, however large the whole page would be at that scale — this is
+ * what keeps the magnifier sharp without a giant bitmap.
+ */
+export function renderPageTile(
+  doc: PDFDocumentProxy,
+  pageNumber: number,
+  scale: number,
+  rect: { left: number; top: number; width: number; height: number },
+  priority = 3,
+): RenderJob<HTMLCanvasElement> {
+  return renderQueue.enqueue(priority, async (ctx) => {
+    const page = await doc.getPage(pageNumber);
+    if (ctx.cancelled) throw new Error("cancelled");
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(rect.width));
+    canvas.height = Math.max(1, Math.round(rect.height));
+    const viewport = page.getViewport({ scale, offsetX: -rect.left, offsetY: -rect.top });
+    return paintOrRelease(canvas, page.render({ canvas, viewport, background: "#ffffff" }), ctx);
   });
 }
 
@@ -207,6 +259,10 @@ export async function renderRegionSnapshot(
   }
 
   return new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("snapshot encoding failed"))), type),
+    canvas.toBlob((b) => {
+      releaseCanvas(canvas);
+      if (b) resolve(b);
+      else reject(new Error("snapshot encoding failed"));
+    }, type),
   );
 }

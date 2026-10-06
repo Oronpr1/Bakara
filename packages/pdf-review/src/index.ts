@@ -1,6 +1,7 @@
 export {
   PdfReviewViewer,
   type DrawResult,
+  type MagnifierOptions,
   type PdfReviewViewerProps,
   type ReviewAnchor,
   type ReviewComment,
@@ -37,3 +38,15 @@ export {
   type Point,
   type Size,
 } from "./geometry";
+export {
+  STICKER_SIZE,
+  TAP_AREA,
+  layoutStickers,
+  previewPlacement,
+  resolveMarkGesture,
+  stickerFace,
+  stickerPosition,
+  tapRectAt,
+  type MarkGesture,
+} from "./stickers";
+export { LENS_POWER, LENS_POWER_MAX, LENS_POWER_MIN, LENS_SIZE, lensToPage, pageToLens } from "./lens";

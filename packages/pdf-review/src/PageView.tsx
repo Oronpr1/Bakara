@@ -1,6 +1,6 @@
 "use client";
 import { memo, useEffect, useRef, type PointerEventHandler, type ReactNode } from "react";
-import { renderPageCanvas, type PDFDocumentProxy } from "./pdf";
+import { releaseCanvas, renderPageCanvas, type PDFDocumentProxy } from "./pdf";
 
 export interface PageViewProps {
   doc: PDFDocumentProxy;
@@ -36,12 +36,21 @@ export const PageView = memo(function PageView(props: PageViewProps) {
     paintedScale.current = null;
   }, [doc]);
 
+  // Leaving: give the bitmap back now (iOS Safari caps the total of live canvases).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    return () => {
+      releaseCanvas(canvas);
+      paintedScale.current = null;
+      if (canvas) delete canvas.dataset.rendered;
+    };
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (!render) {
-      canvas.width = 0;
-      canvas.height = 0;
+      releaseCanvas(canvas);
       paintedScale.current = null;
       delete canvas.dataset.rendered;
       return;
@@ -53,7 +62,7 @@ export const PageView = memo(function PageView(props: PageViewProps) {
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
       canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
-      bitmap.width = 0; // free the off-screen copy now rather than at GC
+      releaseCanvas(bitmap); // free the off-screen copy now rather than at GC
       paintedScale.current = rasterScale;
       canvas.dataset.rendered = "true";
     });
