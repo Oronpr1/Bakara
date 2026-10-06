@@ -4,7 +4,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { AppError, forbidden } from "../errors";
 import { audit } from "../notify";
 
-const { units, campuses, users, letterRequests } = schema;
+const { units, campuses, users } = schema;
 
 export interface UnitRow {
   id: string;
@@ -36,7 +36,7 @@ export async function listCampuses(db: Db = getDb()): Promise<CampusRow[]> {
     db
       .select({
         unit: units,
-        letterCount: sql<number>`(select count(*)::int from ${letterRequests} where ${letterRequests.campus} = ${units.campus} and ${letterRequests.faculty} = ${units.faculty})`,
+        letterCount: sql<number>`(select count(*)::int from "letter_requests" lr where lr."campus" = "units"."campus" and lr."faculty" = "units"."faculty")`,
       })
       .from(units)
       .orderBy(asc(units.faculty)),

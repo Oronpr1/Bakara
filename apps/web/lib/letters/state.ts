@@ -52,26 +52,19 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
   const seasonIds = [...new Set(rows.map((r) => r.seasonId))];
-  const [seasonRows, unitRows, campusRows, system, academicRows, extraRows, reviewRows, commentRows] = await Promise.all([
-    tx.select().from(seasons).where(inArray(seasons.id, seasonIds)),
-    tx.select().from(units),
-    tx.select().from(campuses),
-    systemPeople(tx),
-    tx.select().from(letterAcademics).where(and(inArray(letterAcademics.letterId, ids), isNull(letterAcademics.removedAt))),
-    tx.select().from(letterPeople).where(inArray(letterPeople.letterId, ids)),
-    tx.select().from(reviews).where(inArray(reviews.letterId, ids)).orderBy(asc(reviews.createdAt)),
-    tx
-      .select({ letterId: comments.letterId, n: sql<number>`count(*)::int` })
-      .from(comments)
-      .where(
-        and(
-          inArray(comments.letterId, ids),
-          sql`${comments.publishedAt} is not null`,
-          inArray(comments.status, ["OPEN", "NEEDS_CLARIFICATION"]),
-        ),
-      )
-      .groupBy(comments.letterId),
-  ]);
+  // One after another: a transaction has a single connection, and pg warns about overlapping queries on it.
+  const seasonRows = await tx.select().from(seasons).where(inArray(seasons.id, seasonIds));
+  const unitRows = await tx.select().from(units);
+  const campusRows = await tx.select().from(campuses);
+  const system = await systemPeople(tx);
+  const academicRows = await tx.select().from(letterAcademics).where(and(inArray(letterAcademics.letterId, ids), isNull(letterAcademics.removedAt)));
+  const extraRows = await tx.select().from(letterPeople).where(inArray(letterPeople.letterId, ids));
+  const reviewRows = await tx.select().from(reviews).where(inArray(reviews.letterId, ids)).orderBy(asc(reviews.createdAt));
+  const commentRows = await tx
+    .select({ letterId: comments.letterId, n: sql<number>`count(*)::int` })
+    .from(comments)
+    .where(and(inArray(comments.letterId, ids), sql`${comments.publishedAt} is not null`, inArray(comments.status, ["OPEN", "NEEDS_CLARIFICATION"])))
+    .groupBy(comments.letterId);
 
   const seasonOf = new Map(seasonRows.map((s) => [s.id, s]));
   const unitOf = new Map(unitRows.map((u) => [`${u.campus}\u0000${u.faculty}`, u]));

@@ -478,7 +478,8 @@ const DAY = 24 * 60 * 60 * 1000;
 export async function remindHolders(actor: Actor, letterId: string, db: Db = getDb()): Promise<string[]> {
   const { out } = await withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
     if (!ab.remind) throw forbidden();
-    const ids = [...ab.flow.holder.userIds].filter((id) => id !== actor.userId);
+    // Academic approvers have no login (a reminder would link to a page they cannot open).
+    const ids = ab.flow.holder.kind === "ACADEMIC" ? [] : [...ab.flow.holder.userIds].filter((id) => id !== actor.userId);
     const days = Math.floor((Date.now() - l.row.holderSince.getTime()) / DAY);
     await notify(tx, ids, "REMINDER", letterId, actor.userId, { days });
     await audit(tx, actor.userId, "REMINDED", { letterId, seasonId: l.row.seasonId }, { to: ids });

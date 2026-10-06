@@ -155,7 +155,7 @@ describe.skipIf(!process.env.DATABASE_URL)("marks on the PDF: note, X and line",
   // באג ב-lib/letters/comments.ts (updateDraftComment): לקו שנשלח עם anchor בלבד (בלי points),
   // המלבן זז והנקודות נשארות במקום, כך שהקו המצויר (לפי points) כבר לא בתוך המלבן שלו.
   // צריך לדחות anchor בלי points לקו, או להזיז את הנקודות יחד איתו. כשיתוקן: להחליף ל-it רגיל.
-  it.fails("a line moved by its box alone keeps its points inside that box (known bug)", async () => {
+  it("a line moved by its box alone keeps its points inside that box", async () => {
     const id = await inReview();
     const line = await createComment(people.rm!, id, { anchor: box(), kind: "LINE", points: [[0.1, 0.1], [0.3, 0.1]] });
     const moved = await updateDraftComment(people.rm!, line.id, { anchor: { x: 0.6, y: 0.6, width: 0.2, height: 0.05 } });
@@ -181,12 +181,9 @@ describe.skipIf(!process.env.DATABASE_URL)("marks on the PDF: note, X and line",
     ]);
   });
 
-  // באג (לשקול): הערה שהיועצת עצמה מוסיפה בזמן בדיקה מתפרסמת מיד ונספרת כ"הערה פתוחה",
-  // ולכן המכתב עובר אליה ל"בתיקון" ומבקר שתורו לא יכול להחליט עד שהיא "מטפלת" בהערה של עצמה.
-  // (createComment מדלג על advisorHold ליועצת, אבל openComments עדיין סופר אותה.)
-  it.fails("the advisor's own note during review does not take the letter away from the reviewer (known bug)", async () => {
+  it("the advisor does not mark her own letter: she answers in the thread, and the letter stays with the reviewer", async () => {
     const id = await inReview();
-    await createComment(people.adv!, id, { anchor: box(), body: "לתשומת לבכם: עודכן תאריך תחילת הלימודים" });
+    await expect(createComment(people.adv!, id, { anchor: box(), body: "לתשומת לבכם: עודכן תאריך תחילת הלימודים" })).rejects.toThrow(/הרשאה/);
     const { input } = await loadLetter(getDb(), id);
     expect(flowView(input).state).toBe("IN_REVIEW");
   });

@@ -78,7 +78,7 @@ export async function queueReminders(db: Db = getDb(), now = new Date()) {
     .select({ letter: letterRequests, interval: seasons.reminderIntervalDays })
     .from(letterRequests)
     .innerJoin(seasons, eq(seasons.id, letterRequests.seasonId))
-    .where(and(eq(seasons.status, "ACTIVE"), ne(letterRequests.phase, "APPROVED")));
+    .where(and(eq(seasons.status, "ACTIVE"), ne(letterRequests.phase, "APPROVED"), ne(letterRequests.phase, "DRAFT")));
 
   let queued = 0;
   for (const { letter, interval } of open) {
@@ -87,7 +87,8 @@ export async function queueReminders(db: Db = getDb(), now = new Date()) {
 
     const { input } = await loadLetter(db, letter.id);
     const view = flowView(input);
-    const waiting = [...view.holder.userIds];
+    // Academic approvers have no login: they are nudged by re-sending their link, not by a reminder.
+    const waiting = view.holder.kind === "ACADEMIC" ? [] : [...view.holder.userIds];
     if (waiting.length === 0) continue;
 
     const recent = await db

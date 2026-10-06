@@ -132,9 +132,16 @@ export async function updateDraftComment(
     if (change.suggestion !== undefined) set.suggestion = change.suggestion?.trim() ? cleanBody(change.suggestion) : null;
     const page = change.anchor?.page ?? comment.page;
     const versionNumber = change.anchor?.versionNumber ?? comment.versionNumber;
+    // A line moved by its box alone: its points move by the same distance, so they stay inside it.
+    let points = change.points;
+    if (comment.kind === "LINE" && !points && change.anchor && comment.points) {
+      const dx = change.anchor.x - comment.x;
+      const dy = change.anchor.y - comment.y;
+      points = comment.points.map(([px, py]) => [px + dx, py + dy] as [number, number]);
+    }
     const anchor =
-      comment.kind === "LINE" && change.points
-        ? lineAnchor(change.points, versionNumber, page)
+      comment.kind === "LINE" && points
+        ? lineAnchor(points, versionNumber, page)
         : change.anchor
           ? { versionNumber, page, x: change.anchor.x, y: change.anchor.y, width: change.anchor.width, height: change.anchor.height }
           : null;
@@ -144,7 +151,7 @@ export async function updateDraftComment(
       validateAnchor(anchor, version.pageCount, l.row.latestVersion);
       Object.assign(set, { page: anchor.page, x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.height });
     }
-    if (change.points && comment.kind === "LINE") set.points = change.points;
+    if (points && comment.kind === "LINE") set.points = points;
     if (Object.keys(set).length === 0) return comment;
     const [updated] = await tx.update(comments).set(set).where(eq(comments.id, commentId)).returning();
     return updated!;
@@ -167,7 +174,7 @@ export async function replyToComment(actor: Actor, commentId: string, body: stri
     if (!comment) throw notFound();
     const l = await loadLetter(tx, comment.letterId);
     const ab = abilities(actor, l.input);
-    if (!ab.view || !ab.comment) throw forbidden();
+    if (!ab.view || !ab.reply) throw forbidden();
     if (!comment.publishedAt && comment.authorId !== actor.userId) throw notFound();
     const [reply] = await tx.insert(commentReplies).values({ commentId, authorId: actor.userId, body: text }).returning();
     const earlier = await tx.select({ authorId: commentReplies.authorId }).from(commentReplies).where(eq(commentReplies.commentId, commentId));

@@ -146,7 +146,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
   // באג ב-lib/addin/letters.ts (letterForAddin): canSubmit = abilities().submit, שדורש גרסה קיימת
   // (NO_VERSION). בטיוטה חדשה כפתור "שמור והעבר לבדיקה" מוסתר, אף שהוא עצמו שומר את הגרסה
   // לפני השליחה (ונתיב ההעלאה בודק רק הרשאות). כשיתוקן: להחליף ל-it רגיל.
-  it.fails("offers 'save and submit' on a fresh draft, since that button saves the version first (known bug)", async () => {
+  it("offers 'save and submit' on a fresh draft, since that button saves the version first", async () => {
     const res = await getLetter(req(`/api/addin/letter?url=${encodeURIComponent(wordUrl)}`, { who: "adv" }));
     expect((await res.json()).letter).toMatchObject({ latestVersion: 0, canSubmit: true });
   });
@@ -259,7 +259,7 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     expect(letter.openComments).toEqual([
       expect.objectContaining({ id: comment.id, authorName: "משתמש rm", page: 1, versionNumber: 2, status: "OPEN", hasSnapshot: true, body: "לתקן את התאריך" }),
     ]);
-    expect(letter).toMatchObject({ stage: "REVIEW", stageLabel: "בתיקון", canUpload: true, canSubmit: false });
+    expect(letter).toMatchObject({ stage: "REVIEW", stageLabel: "בתיקון", canUpload: true, canSubmit: true }); // fixing: "save and send the fixes back"
 
     const snap = await getSnapshot(req(`/api/addin/comments/${comment.id}/snapshot`, { who: "adv" }), params(comment.id));
     expect(snap.status).toBe(200);

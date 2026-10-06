@@ -105,6 +105,7 @@ export async function letterForAddin(actor: Actor, letterId: string, db: Db = ge
       page: comments.page,
       versionNumber: comments.versionNumber,
       status: comments.status,
+      kind: comments.kind,
       snapshotKey: comments.snapshotKey,
       createdAt: comments.createdAt,
     })
@@ -128,7 +129,7 @@ export async function letterForAddin(actor: Actor, letterId: string, db: Db = ge
       .map((c) => ({
         id: c.id,
         authorName: c.authorName,
-        body: c.body,
+        body: c.body || (c.kind === "X" ? "סימון X על המסמך" : c.kind === "LINE" ? "קו על המסמך" : c.body),
         page: c.page,
         versionNumber: c.versionNumber,
         status: c.status as AddinComment["status"],
@@ -136,7 +137,11 @@ export async function letterForAddin(actor: Actor, letterId: string, db: Db = ge
         createdAt: c.createdAt.toISOString(),
       })),
     canUpload: ab.uploadVersion,
-    canSubmit: ab.submit,
+    // "Save and submit" saves the version first, so a draft with no version yet still offers it; and a
+    // letter being fixed offers it (it sends the fixes back).
+    canSubmit:
+      ab.uploadVersion &&
+      (ab.flow.phase === "DRAFT" ? ab.flow.blockers.every((b) => b === "NO_VERSION") : ab.flow.fixing),
   };
 }
 

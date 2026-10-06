@@ -207,7 +207,7 @@ describe.skipIf(!process.env.DATABASE_URL)("campus + faculty defaults", () => {
   // באג ידוע ב-lib/units/service.ts (listCampuses): ה-SQL של הספירה יוצא
   // `where "campus" = "campus" and "faculty" = "faculty"` (drizzle משמיט את שם הטבלה בשאילתה בלי join),
   // ולכן כל פקולטה מראה את מספר כל המכתבים במערכת. כשיתוקן: להחליף ל-it רגיל.
-  it.fails("counts the letters of each campus + faculty (known bug: counts every letter in the system)", async () => {
+  it("counts the letters of each campus + faculty", async () => {
     expect((await unitRow("מנהל עסקים")).letterCount).toBe(2);
     expect((await unitRow("בריאות", campus2)).letterCount).toBe(1);
   });

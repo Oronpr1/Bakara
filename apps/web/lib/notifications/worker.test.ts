@@ -113,7 +113,7 @@ describe.skipIf(!process.env.DATABASE_URL)("notification worker", () => {
       expect(await to("withVp")).toContain(ids.vp); // the manager approved: the VP (every VP) now holds it
       expect(await to("withVp")).not.toContain(ids.rm);
       expect(await to("fixing")).toEqual([ids.adv]); // being fixed: the advisor holds it
-      expect(await to("academic")).toEqual([ids.head]);
+      expect(await to("academic")).toEqual([]); // academic approvers have no login: nudged by re-sending the link
       expect(await to("fresh")).toEqual([]); // held 1 day, the interval is 2
       expect(await to("loading")).toEqual([]); // approved letters are not chased
       expect(await to("archived")).toEqual([]); // an archived season is over

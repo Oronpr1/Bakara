@@ -31,7 +31,10 @@ export interface DecidableSeat {
 
 export interface Abilities {
   view: boolean;
+  /** Mark the document (note, X, line). The advisor answers comments but does not mark her own letter. */
   comment: boolean;
+  /** Reply in a comment's thread. */
+  reply: boolean;
   /** Mark a comment as fixed / not accepted, and reply as the advisor. */
   handleComments: boolean;
   uploadVersion: boolean;
@@ -96,7 +99,8 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
 
   return {
     view: canSee,
-    comment: canSee && commentPhase.includes(phase),
+    comment: canSee && commentPhase.includes(phase) && (!advisor || rm || vp),
+    reply: canSee && commentPhase.includes(phase),
     handleComments: canSee && (advisor || actsFor) && phase !== "APPROVED",
     uploadVersion,
     submit: canSee && phase === "DRAFT" && (advisor || actsFor) && view.blockers.length === 0,
