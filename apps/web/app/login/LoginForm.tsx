@@ -8,11 +8,12 @@ import { loginAction, type LoginState } from "./actions";
 
 const primary = `${btnPrimary} w-full`;
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const [state, action, pending] = useActionState<LoginState, FormData>(loginAction, {});
 
   return (
     <form action={action} className="flex flex-col gap-4" aria-busy={pending}>
+      <input type="hidden" name="next" value={next ?? ""} />
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-semibold">מייל המכללה</span>
         <input
