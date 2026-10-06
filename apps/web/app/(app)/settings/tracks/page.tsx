@@ -70,7 +70,7 @@ export default async function TracksSettingsPage({ searchParams }: { searchParam
         </p>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-2 lg:items-start">
+      <div className="flex flex-col gap-3">
         {canCreate && (
           <details className={`${card} group flex flex-col`}>
             <summary className={`${summaryClass} text-base`}>

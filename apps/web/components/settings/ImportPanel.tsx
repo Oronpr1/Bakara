@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, CircleCheck, FileSpreadsheet, ScanSearch, TriangleAlert, Upload } from "lucide-react";
+import { BookOpen, CircleAlert, CircleCheck, Download, FileSpreadsheet, ScanSearch, TriangleAlert, Upload } from "lucide-react";
 import Link from "next/link";
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { Tag } from "@/components/Pills";
@@ -12,6 +12,50 @@ type Status = "OK" | "CREATED" | "EXISTS" | "ERROR" | "SKIPPED";
 const LABEL: Record<Status, string> = { OK: "מוכן לייבוא", CREATED: "נוסף", EXISTS: "כבר קיים", ERROR: "לא ניתן לייבא", SKIPPED: "דולג" };
 const TONE: Record<Status, "accent" | "good" | "muted" | "bad"> = { OK: "accent", CREATED: "good", EXISTS: "muted", SKIPPED: "muted", ERROR: "bad" };
 const ORDER: Record<Status, number> = { ERROR: 0, OK: 1, CREATED: 1, EXISTS: 2, SKIPPED: 3 };
+
+/** How to prepare the file, with the example to start from. Same wording as the example's "הוראות" sheet. */
+function ImportGuide() {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-accent/30 bg-accent-soft/50 p-3 text-sm sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 font-bold">
+          <BookOpen aria-hidden className="size-4 text-accent" />
+          איך מכינים את הקובץ
+        </p>
+        <a href="/settings/tracks/sample.xlsx" download className={btnSecondary}>
+          <Download aria-hidden className="size-4" />
+          הורד קובץ לדוגמה
+        </a>
+      </div>
+      <ol className="flex list-decimal flex-col gap-1.5 ps-5">
+        <li>
+          קובץ Excel (או CSV). בגיליון הראשון, השורה הראשונה היא כותרות, ומתחתיה מסלול בכל שורה. הכי פשוט: להוריד את הקובץ לדוגמה ולמלא אותו.
+        </li>
+        <li>
+          עמודות חובה (בכל סדר): <b>קמפוס</b>, <b>פקולטה</b>, <b>מסלול</b> (שם המסלול), <b>קוד מסלול</b> (ספרות בלבד, למשל 228114002).
+        </li>
+        <li>
+          עמודה לא חובה: <b>יועצת בקרה</b>, בשם או במייל כמו שהיא רשומה במערכת. בלעדיה, היועצת נלקחת מהקמפוס או מהפקולטה. מנהל הרישום תמיד נקבע לפי
+          הקמפוס או הפקולטה (בלשונית{" "}
+          <Link href="/settings/units" className="font-semibold text-accent underline">
+            קמפוסים ופקולטות
+          </Link>
+          ).
+        </li>
+        <li>עמודות נוספות (יעד, הערות וכדומה) לא משנות ולא נקראות.</li>
+      </ol>
+      <div className="flex flex-col gap-1">
+        <p className="font-semibold">מה קורה לשורות שאינן תקינות</p>
+        <ul className="flex list-disc flex-col gap-1 ps-5">
+          <li>שורות מקום, כמו &quot;ללא ממ&quot;ה&quot; או קוד &quot;-&quot;, מדולגות.</li>
+          <li>שורה בלי פקולטה, עם קוד לא תקין, או עם קוד שמופיע פעמיים באותו קמפוס, מסומנת כבעיה ולא נכנסת. שאר השורות נכנסות.</li>
+          <li>מסלול בלי יועצת (לא בקובץ ולא בקמפוס או בפקולטה) לא נכנס. מסלול בלי מנהל רישום נכנס, ומסומן באדום עד שמגדירים לו.</li>
+          <li>אפשר לייבא שוב את אותו קובץ אחרי שהשלמתם הגדרות: מסלול שכבר קיים לא יוכפל.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Tracks from a spreadsheet into the season: a preview that changes nothing, then the import.
@@ -51,6 +95,7 @@ export function ImportPanel({
 
   return (
     <div className="flex flex-col gap-4">
+      <ImportGuide />
       <form ref={form} onSubmit={onSubmit} className="flex flex-col gap-3" aria-busy={pending}>
         <input type="hidden" name="seasonId" value={seasonId} />
         <label className="flex flex-col gap-1.5">
@@ -65,8 +110,7 @@ export function ImportPanel({
           />
         </label>
         <p className="text-sm text-muted">
-          בשורה הראשונה: <b>קמפוס</b>, <b>פקולטה</b>, <b>מסלול</b> (שם) ו<b>קוד מסלול</b>. עמודת &quot;יועצת בקרה&quot; (שם או מייל) לא חובה: בלעדיה כל מסלול
-          מקבל את היועצת של הקמפוס או הפקולטה שלו. עמודות אחרות לא משנות. המסלולים ייכנסו לעונה <b>{seasonName}</b>. מסלול שכבר קיים לא יוכפל.
+          המסלולים ייכנסו לעונה <b className="text-fg">{seasonName}</b>. קודם בודקים מה יקרה, ואז מייבאים.
         </p>
         <div className="flex flex-wrap gap-2">
           <button name="intent" value="preview" className={btnSecondary} disabled={pending}>
