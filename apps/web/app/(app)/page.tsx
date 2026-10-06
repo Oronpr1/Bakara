@@ -76,9 +76,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const group = filters.g ?? defaultGroup(persona);
   // A registration manager who is also the advisor of every letter in the unit (שולי) needs no
   // second, unit-wide summary: her own tiles already say it all.
-  const unitSummary = persona.control || persona.vp || (persona.rm && (!persona.advisor || all.some((l) => !l.advisorIds.includes(me))));
-  const onlyMine = !persona.control && !persona.vp && !persona.rm;
-  const shown = sortItems(applyFilters(all, filters, me, group), filters.sort);
+  const unitSummary = persona.control || persona.vp || (persona.rm && (!persona.advisor || all.some((l) => !l.advisorIds.includes(me))));  const shown = sortItems(applyFilters(all, filters, me, group), filters.sort);
   const personal = personalGroups(persona);
   const canImport = canGlobal(actor, "MANAGE_UNITS");
   const holderIndex = filters.holder ? all.find((l) => l.holderIds.includes(filters.holder!)) : undefined;
@@ -119,7 +117,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </header>
 
       {/* The person's own dashboard: how many letters, and where they stand. */}
-      <section aria-label="תמונת מצב" className="flex flex-col gap-4">
+      {/* With no letters at all, the empty list below explains what comes next; zero tiles would only add noise. */}
+      <section aria-label="תמונת מצב" className={`flex flex-col gap-4 ${all.length === 0 ? "hidden" : ""}`}>
         {personal.length > 0 && (
           <div className="flex flex-col gap-2">
             {unitSummary && <h2 className="text-sm font-bold text-muted">שלך</h2>}
@@ -180,7 +179,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           items={shown}
           canRemind={persona.control}
           showManager={persona.control}
-          showAdvisor={!onlyMine || all.some((l) => l.advisorId !== me)}
+          showAdvisor={persona.control || persona.vp || all.some((l) => l.advisorId !== me)}
           me={me}
           empty={<ListEmpty group={group} filters={filters} persona={persona} total={all.length} canImport={canImport} seasonId={view.season.id} />}
         />
