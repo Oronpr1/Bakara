@@ -10,9 +10,8 @@ import type { ActionResult } from "@/lib/action-result";
 import { formObject, runAction } from "@/lib/actions";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
-import { AppError, userMessage } from "@/lib/errors";
-import * as commentsService from "@/lib/letters/comments";
-import { createComment, deleteDraftComment, replyToComment, setCommentStatus } from "@/lib/letters/comments";
+import { userMessage } from "@/lib/errors";
+import { createComment, deleteDraftComment, replyToComment, setCommentStatus, updateDraftComment } from "@/lib/letters/comments";
 import { openInWord, versionFromSharePoint } from "@/lib/letters/live-file";
 import { listUsers } from "@/lib/letters/queries";
 import {
@@ -189,8 +188,8 @@ const text = (msg: string) => z.string({ message: msg }).trim().min(1, { message
 const MARK_KINDS = ["NOTE", "X", "LINE"] as const;
 type MarkKind = (typeof MARK_KINDS)[number];
 type MarkPoint = { x: number; y: number };
-/** What the comments service takes beyond the anchor and text (kind, colour, the line's points). */
-type MarkExtras = { kind?: MarkKind; color?: string; points?: MarkPoint[] };
+/** The viewer works with {x, y} points; the service stores [x, y] pairs. */
+const toPairs = (pts?: MarkPoint[]): [number, number][] | undefined => pts?.map((p) => [p.x, p.y] as [number, number]);
 
 const color = z
   .string()
@@ -242,15 +241,14 @@ export async function createCommentAction(_prev: ActionResult, form: FormData): 
       .refine((d) => d.kind === "X" || d.kind === "LINE" || Boolean(d.body), { message: "צריך לכתוב את ההערה", path: ["body"] }),
     formObject(form),
     async (actor, d) => {
-      // Built as a variable so the extra fields pass through whether or not the service declares them yet.
-      const input: Parameters<typeof createComment>[2] & MarkExtras = {
+      const input: Parameters<typeof createComment>[2] = {
         anchor: { versionNumber: d.versionNumber, page: d.page, x: d.x, y: d.y, width: d.width, height: d.height },
         body: d.body ?? "",
         suggestion: composeSuggestion(d.from, d.to),
         snapshotPng: d.snapshot && d.snapshot.size > 0 ? new Uint8Array(await d.snapshot.arrayBuffer()) : undefined,
         kind: d.kind,
         color: d.color,
-        points: d.points,
+        points: toPairs(d.points),
       };
       return createComment(actor, d.letterId, input);
     },
@@ -299,12 +297,7 @@ export async function updateDraftAction(input: { letterId: string; commentId: st
     draftPatch,
     input,
     async (actor, d) => {
-      // Looked up by name so this file builds before the service gains the function.
-      const update = (commentsService as unknown as Record<string, unknown>).updateDraftComment as
-        | ((actor: unknown, commentId: string, patch: DraftPatch) => Promise<unknown>)
-        | undefined;
-      if (typeof update !== "function") throw new AppError("INVALID", "עריכת טיוטה עוד לא זמינה");
-      await update(actor, d.commentId, d.patch);
+      await updateDraftComment(actor, d.commentId, { ...d.patch, points: toPairs(d.patch.points) });
     },
     paths,
   );
