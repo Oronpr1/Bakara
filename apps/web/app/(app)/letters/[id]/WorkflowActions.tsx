@@ -215,6 +215,20 @@ export function WorkflowActions({
         confirm={`להעביר את המכתב ל${STAGE_LABELS[next]} בלי לחכות לסיום השלב?`}
       />,
     );
+  if (can("SKIP_ACADEMIC"))
+    secondary.push(
+      <WithReason
+        key="skip-academic"
+        letterId={id}
+        action="SKIP_ACADEMIC"
+        icon={FastForward}
+        summary="דלג על הגורם האקדמי"
+        submitLabel="דלג לאישור סופי"
+        reasonLabel="סיבה (לא חובה, נשמרת בהיסטוריה)"
+        required={false}
+        confirm="לדלג על הסבב האקדמי ולהעביר את המכתב לאישור סופי?"
+      />,
+    );
   if (can("REOPEN"))
     secondary.push(
       <WithReason

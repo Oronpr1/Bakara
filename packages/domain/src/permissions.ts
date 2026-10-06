@@ -23,6 +23,7 @@ export type LetterAction =
   | "APPROVE"
   | "FINAL_APPROVE"
   | "FORCE_ADVANCE"
+  | "SKIP_ACADEMIC"
   | "REOPEN"
   | "SET_REGISTRATION_MANAGER"
   | "SET_ACADEMIC_APPROVERS"
@@ -101,6 +102,9 @@ export function canOnLetter(actor: Actor, action: LetterAction, letter: LetterSt
       return cm && letter.stage === "FINAL_REVIEW";
     case "FORCE_ADVANCE":
       return cm && open && letter.stage !== "FINAL_REVIEW";
+    case "SKIP_ACADEMIC":
+      // בסמכות מנהלת הבקרה והסמנכ"ל, מהסיבות שלהם.
+      return top && letter.stage === "ACADEMIC_ROUND";
     case "REOPEN":
       return cm && letter.stage === "APPROVED";
     case "SET_REGISTRATION_MANAGER":

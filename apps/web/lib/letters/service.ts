@@ -432,7 +432,8 @@ export async function performTransition(
     const { row, state } = await loadLetter(tx, letterId, { lock: true });
     ensure(actor, action, state);
     const target = transition(state, action, { reason });
-    if (reason) await audit(tx, actor.userId, action, { letterId, seasonId: row.seasonId }, { reason });
+    if (reason || action === "SKIP_ACADEMIC")
+      await audit(tx, actor.userId, action, { letterId, seasonId: row.seasonId }, reason ? { reason } : {});
     return { from: row.stage, to: await setStage(tx, row, state, target, actor.userId) };
   });
   // After the commit: a slow or failing SharePoint call must not hold or undo the approval.

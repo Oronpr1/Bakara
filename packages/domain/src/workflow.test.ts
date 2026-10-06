@@ -154,6 +154,16 @@ describe("approval rounds", () => {
     expect(transition(waiting, "FORCE_ADVANCE", { reason: "אין גורם אקדמי למסלול" })).toBe("FINAL_REVIEW");
   });
 
+  it("the control manager or the VP may skip the academic round, with or without a reason", () => {
+    const l = letter({ stage: "ACADEMIC_ROUND", approvers: [{ userId: "rm", slot: "REGISTRATION_MANAGER" }] });
+    expect(canOnLetter(cm, "SKIP_ACADEMIC", l)).toBe(true);
+    expect(canOnLetter(vp, "SKIP_ACADEMIC", l)).toBe(true);
+    expect(canOnLetter(advisor, "SKIP_ACADEMIC", l)).toBe(false);
+    expect(canOnLetter(cm, "SKIP_ACADEMIC", letter({ stage: "REGISTRATION_ROUND" }))).toBe(false);
+    expect(transition(l, "SKIP_ACADEMIC")).toBe("FINAL_REVIEW");
+    expect(() => transition(letter({ stage: "REGISTRATION_ROUND" }), "SKIP_ACADEMIC")).toThrow(WorkflowError);
+  });
+
   it("anyone in the letter's workspace may choose the academic approver, until final review", () => {
     const rm: Actor = { userId: "rm", roles: ["REGISTRATION_MANAGER"] };
     for (const stage of ["DRAFT", "REGISTRATION_ROUND", "ACADEMIC_ROUND"] as const) {

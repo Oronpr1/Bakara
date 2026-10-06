@@ -96,6 +96,7 @@ export const ACTIONS = [
   "INITIAL_APPROVE", // מנהלת בקרה: אישור לסבב
   "RETURN_FOR_CHANGES", // מנהלת בקרה: החזרה לתיקון
   "FORCE_ADVANCE", // מנהלת בקרה: העברה לשלב הבא למרות חוסמים, עם סיבה
+  "SKIP_ACADEMIC", // מנהלת בקרה / סמנכ"ל: דילוג על הסבב האקדמי, בסמכותם, הסיבה לא חובה
   "FINAL_APPROVE", // מנהלת בקרה: מאושר להפצה
   "REOPEN", // מנהלת בקרה: פתיחה מחדש של מכתב מאושר
 ] as const;
@@ -164,6 +165,9 @@ export function transition(
       if (letter.latestVersion < 1) throw new WorkflowError("NO_VERSION", "Upload a version first");
       return settle(next);
     }
+    case "SKIP_ACADEMIC":
+      need("ACADEMIC_ROUND");
+      return "FINAL_REVIEW";
     case "REOPEN":
       need("APPROVED");
       if (!opts.reason?.trim()) throw new WorkflowError("REASON_REQUIRED", "A reason is required");
