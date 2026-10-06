@@ -315,4 +315,4 @@ export function holderRows(holders: readonly HolderLine[], items: readonly HomeL
 }
 
 /** Letters the actor may approve finally in one go: their turn, nothing open, no unpublished comments of theirs. */
-export const finalEligible = (l: HomeLetter) => l.canFinal && l.openComments === 0 && l.myDrafts === 0;
+export const finalEligible = (l: Pick<HomeLetter, "canFinal" | "openComments" | "myDrafts">) => l.canFinal && l.openComments === 0 && l.myDrafts === 0;

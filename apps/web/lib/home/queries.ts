@@ -33,7 +33,10 @@ async function draftCounts(db: Db, actor: Actor, letterIds: string[]) {
  * input the flow uses. Only for the given letter ids.
  */
 export async function letterExtras(actor: Actor, letterIds: string[], db: Db = getDb()) {
-  const out = new Map<string, { rmIds: string[]; advisorIds: string[]; canRemind: boolean; canFinal: boolean; finalOnBehalfOf: string | null; myDrafts: number }>();
+  const out = new Map<
+    string,
+    { rmIds: string[]; advisorIds: string[]; canRemind: boolean; canFinal: boolean; finalOnBehalfOf: string | null; myDrafts: number; openComments: number }
+  >();
   if (letterIds.length === 0) return out;
   const rows = await db.select().from(letterRequests).where(inArray(letterRequests.id, letterIds));
   const [loaded, drafts] = await Promise.all([loadLetters(db, rows), draftCounts(db, actor, letterIds)]);
@@ -47,6 +50,7 @@ export async function letterExtras(actor: Actor, letterIds: string[], db: Db = g
       canFinal: Boolean(final),
       finalOnBehalfOf: final?.onBehalfOf ?? null,
       myDrafts: drafts.get(l.row.id) ?? 0,
+      openComments: l.input.openComments,
     });
   }
   return out;
