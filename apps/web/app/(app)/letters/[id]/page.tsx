@@ -41,7 +41,7 @@ export default async function LetterPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="flex flex-col gap-4">
-      <RoomHeader room={props} backHref="/" actions={<ManageMenu room={props} />} />
+      <RoomHeader room={props} backHref="/season" actions={<ManageMenu room={props} />} />
       <Room room={props} choices={choices} wordSlot={wordSlot} />
     </div>
   );

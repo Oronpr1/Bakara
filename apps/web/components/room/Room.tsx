@@ -38,7 +38,7 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(false);
   const [draft, setDraft] = useState<DraftMark | null>(null);
-  const [showResolved] = useState(false);
+  const showResolved = false;
   const panelRef = useRef<HTMLElement>(null);
   const isDesktop = useIsDesktop();
 
