@@ -74,12 +74,13 @@ export function PasswordField({
               setCopied(false);
             }}
             aria-describedby={`${id}-hint`}
-            className={`${input} pe-11 font-mono tracking-wide`}
+            className={`${input} pl-11 font-mono tracking-wide`}
           />
+          {/* The box is left-to-right, so the eye sits on its left, where the text does not reach. */}
           <button
             type="button"
             onClick={() => setShown((s) => !s)}
-            className="absolute end-1 top-1/2 inline-flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-accent-soft hover:text-fg"
+            className="absolute left-1 top-1/2 inline-flex size-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-accent-soft hover:text-fg"
             aria-label={shown ? "הסתר סיסמה" : "הצג סיסמה"}
           >
             {shown ? <EyeOff aria-hidden className="size-4" /> : <Eye aria-hidden className="size-4" />}

@@ -3,6 +3,7 @@ import { CalendarPlus, ChevronLeft, CircleCheck, FilePlus2, FileSpreadsheet, Lis
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/EmptyState";
+import { Disclosure } from "@/components/settings/Disclosure";
 import { ImportPanel } from "@/components/settings/ImportPanel";
 import { NewTrackForm } from "@/components/settings/NewTrackForm";
 import { TracksBoard } from "@/components/settings/TracksBoard";
@@ -89,16 +90,22 @@ export default async function TracksSettingsPage({ searchParams }: { searchParam
             </div>
           </details>
         )}
-        <details className={`${card} group flex flex-col`} open={empty}>
-          <summary className={`${summaryClass} text-base`}>
-            <ChevronLeft aria-hidden className="chev size-4" />
-            <FileSpreadsheet aria-hidden className="size-5" />
-            ייבוא מסלולים מקובץ
-          </summary>
+        <Disclosure
+          key={current.id}
+          className={`${card} group flex flex-col`}
+          defaultOpen={empty}
+          summary={
+            <summary className={`${summaryClass} text-base`}>
+              <ChevronLeft aria-hidden className="chev size-4" />
+              <FileSpreadsheet aria-hidden className="size-5" />
+              ייבוא מסלולים מקובץ
+            </summary>
+          }
+        >
           <div className="mt-4">
             <ImportPanel action={importTracksAction} seasonId={current.id} seasonName={current.name} />
           </div>
-        </details>
+        </Disclosure>
       </div>
 
       {empty ? (

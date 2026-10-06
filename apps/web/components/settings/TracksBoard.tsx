@@ -74,6 +74,7 @@ const MODES: { mode: BulkMode; label: string; explain: string; people: "advisors
 
 const norm = (s: string) => s.replace(/["'׳״.\-]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 const tracksWord = (n: number) => (n === 1 ? "מסלול אחד" : `${n} מסלולים`);
+const inTracks = (n: number) => (n === 1 ? "במסלול אחד" : `ב-${n} מסלולים`);
 
 function AdvisorCell({ t }: { t: TrackAssignment }) {
   return (
@@ -505,13 +506,13 @@ export function TracksBoard({
             </>
           ) : null}
 
-          {bulk && "error" in bulk && (
+          {!bulkPending && bulk && "error" in bulk && (
             <p role="alert" className="flex items-start gap-1.5 text-sm text-bad">
               <CircleAlert aria-hidden className="mt-0.5 size-4" />
               {bulk.error}
             </p>
           )}
-          {bulk && "ok" in bulk && (
+          {!bulkPending && bulk && "ok" in bulk && (
             <div role="status" className="flex flex-col gap-1.5 text-sm">
               <p className="flex items-start gap-1.5 font-semibold text-good">
                 <CircleCheck aria-hidden className="mt-0.5 size-4" />
@@ -533,8 +534,10 @@ export function TracksBoard({
 
       <ConfirmDialog
         open={asking}
-        message={`${current.verb(person?.name ?? "")} ב${tracksWord(selected.size)}?${
-          mode === "ADVISOR" || mode.startsWith("ADD") ? " הם יקבלו את המסלולים לרשימה שלהם." : ""
+        message={`${current.verb(person?.name ?? "")} ${inTracks(selected.size)}?${
+          person && (mode === "ADVISOR" || mode.startsWith("ADD"))
+            ? ` ${selected.size === 1 ? "המסלול יופיע" : "המסלולים יופיעו"} ברשימה של ${person.name}.`
+            : ""
         }`}
         confirmLabel="כן, להחיל"
         onCancel={() => setAsking(false)}

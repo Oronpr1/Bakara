@@ -79,11 +79,14 @@ export async function bulkAssignAction(_prev: BulkState, form: FormData): Promis
   try {
     const r = await bulkAssign(actor, parsed.data);
     revalidateAll();
-    const parts = [
-      r.changed === 1 ? "עודכן מסלול אחד" : `עודכנו ${r.changed} מסלולים`,
-      r.unchanged ? (r.unchanged === 1 ? "מסלול אחד כבר היה כך" : `${r.unchanged} כבר היו כך`) : "",
-      r.failed.length ? `${r.failed.length} לא עודכנו (הפירוט למטה)` : "",
-    ].filter(Boolean);
+    const parts =
+      r.changed === 0 && r.failed.length === 0
+        ? ["לא היה מה לשנות: המסלולים שנבחרו כבר היו כך"]
+        : [
+            r.changed === 1 ? "עודכן מסלול אחד" : `עודכנו ${r.changed} מסלולים`,
+            r.unchanged ? (r.unchanged === 1 ? "מסלול אחד כבר היה כך" : `${r.unchanged} כבר היו כך`) : "",
+            r.failed.length ? `${r.failed.length} לא עודכנו (הפירוט למטה)` : "",
+          ].filter(Boolean);
     return { ok: true, message: parts.join(" · "), failed: r.failed.map(({ track, message }) => ({ track, message })), at: Date.now() };
   } catch (err) {
     return { error: userMessage(err) };

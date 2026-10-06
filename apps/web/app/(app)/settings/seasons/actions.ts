@@ -30,7 +30,7 @@ export async function createSeasonAction(_prev: ActionResult, form: FormData): P
     z
       .object({ name, copyFromSeasonId: z.uuid().optional(), codeFrom: code("הקוד הישן").optional(), codeTo: code("הקוד החדש").optional(), ...settings })
       .refine((d) => !d.copyFromSeasonId || Boolean(d.codeFrom) === Boolean(d.codeTo), {
-        message: 'כדי להחליף את תחילת הקוד צריך למלא גם "מ-" וגם "ל-" (או להשאיר את שניהם ריקים)',
+        message: 'כדי להחליף את תחילת הקוד צריך למלא את שני השדות ("קוד שמתחיל ב-" ו"יתחיל ב-"), או להשאיר את שניהם ריקים',
       }),
     formObject(form),
     async (actor, d) => {

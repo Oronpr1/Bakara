@@ -5,6 +5,7 @@ import { ActionForm } from "@/components/ActionForm";
 import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
 import { Tag } from "@/components/Pills";
+import { Disclosure } from "@/components/settings/Disclosure";
 import { NewSeasonForm } from "@/components/settings/NewSeasonForm";
 import { SeasonSettingsFields } from "@/components/settings/SeasonSettingsFields";
 import { btnSecondary, card, summary as summaryClass } from "@/components/ui";
@@ -37,12 +38,17 @@ export default async function SeasonsSettingsPage() {
         </p>
       </div>
 
-      <details className={`${card} group flex flex-col`} open={seasons.length === 0}>
-        <summary className={`${summaryClass} text-base`}>
-          <ChevronLeft aria-hidden className="chev size-4" />
-          <CalendarPlus aria-hidden className="size-5" />
-          פתיחת עונה חדשה
-        </summary>
+      <Disclosure
+        className={`${card} group flex flex-col`}
+        defaultOpen={seasons.length === 0}
+        summary={
+          <summary className={`${summaryClass} text-base`}>
+            <ChevronLeft aria-hidden className="chev size-4" />
+            <CalendarPlus aria-hidden className="size-5" />
+            פתיחת עונה חדשה
+          </summary>
+        }
+      >
         <div className="mt-4">
           <NewSeasonForm
             action={createSeasonAction}
@@ -55,7 +61,7 @@ export default async function SeasonsSettingsPage() {
             }))}
           />
         </div>
-      </details>
+      </Disclosure>
 
       {seasons.length === 0 ? (
         <EmptyState icon={CalendarRange} title="עדיין לא נפתחו עונות">
@@ -128,7 +134,7 @@ export default async function SeasonsSettingsPage() {
                   )}
                 </div>
 
-                <details className="group flex flex-col" open={isCurrent && seasons.length === 1}>
+                <details className="group flex flex-col">
                   <summary className={`${summaryClass} text-sm`}>
                     <ChevronLeft aria-hidden className="chev size-4" />
                     שינוי הגדרות העונה

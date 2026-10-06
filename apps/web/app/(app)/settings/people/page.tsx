@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { Field } from "@/components/Field";
 import { Tag } from "@/components/Pills";
 import { CredentialsForm } from "@/components/settings/CredentialsForm";
+import { Disclosure } from "@/components/settings/Disclosure";
 import { RoleChecks } from "@/components/settings/RoleChecks";
 import { btnQuiet, btnSecondary, card, summary as summaryClass } from "@/components/ui";
 import { actorOf } from "@/lib/actor";
@@ -66,12 +67,17 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
         </div>
       </div>
 
-      <details className={`${card} group flex flex-col`} open={people.length <= 1}>
-        <summary className={`${summaryClass} text-base`}>
-          <ChevronLeft aria-hidden className="chev size-4" />
-          <UserPlus aria-hidden className="size-5" />
-          הוספת אדם
-        </summary>
+      <Disclosure
+        className={`${card} group flex flex-col`}
+        defaultOpen={people.length <= 1}
+        summary={
+          <summary className={`${summaryClass} text-base`}>
+            <ChevronLeft aria-hidden className="chev size-4" />
+            <UserPlus aria-hidden className="size-5" />
+            הוספת אדם
+          </summary>
+        }
+      >
         <div className="mt-4">
           <CredentialsForm
             action={createPersonAction}
@@ -87,7 +93,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
             <RoleChecks legend="תפקידים (אפשר כמה)" />
           </CredentialsForm>
         </div>
-      </details>
+      </Disclosure>
 
       <section aria-labelledby="people-list" className="flex flex-col gap-3">
         <h3 id="people-list" className="sr-only">
