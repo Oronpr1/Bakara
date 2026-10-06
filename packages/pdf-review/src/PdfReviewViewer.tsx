@@ -7,31 +7,49 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   clampPoint,
   clampRectToPage,
   normToPixelRect,
-  pageIndexAt,
   pixelRectToNorm,
   rectFromDrag,
   scrollToReveal,
   type NormRect,
+  type PixelRect,
   type Point,
   type Size,
 } from "./geometry";
 import {
   captureAnchor,
   computeLayout,
+  fitPageZoom,
   fitWidthZoom,
   navState,
   scrollForAnchor,
   spacingFor,
+  stepZoomPercent,
   type ZoomAnchor,
 } from "./layout";
-import { LENS_POWER, LENS_SIZE, clampPower, effectivePower, stepPower } from "./lens";
-import { Magnifier, formatPower, type LensTarget, type MagnifierHandle } from "./Magnifier";
+import {
+  DEFAULT_MARK_COLOR,
+  TAP_AREA,
+  lineFromDrag,
+  markColor,
+  moveEndpoint,
+  movePoints,
+  moveRect,
+  normPoint,
+  pointsBounds,
+  pxPoint,
+  resizeRect,
+  resolveMarkGesture,
+  type MarkKind,
+} from "./marks";
+import { MarkToolbar, type ViewerTool } from "./MarkToolbar";
+import { MarkView, percentBox, type Grip } from "./MarkView";
 import { PageView } from "./PageView";
 import {
   CSS_UNITS,
@@ -44,10 +62,12 @@ import {
   type PdfSource,
 } from "./pdf";
 import { startPointerDrag, type PointerDragHandle, type PointerPoint } from "./pointerDrag";
-import { StickerNote, percentBox } from "./StickerNote";
-import { STICKER_SIZE, TAP_AREA, layoutStickers, resolveMarkGesture, stickerFace } from "./stickers";
+import { STICKER_SIZE, layoutStickers } from "./stickers";
 import { useZoomGestures } from "./useZoomGestures";
 import { clampZoom } from "./viewerGestures";
+import { ZoomBar, type FitMode } from "./ZoomBar";
+
+export type { MarkKind, ViewerTool };
 
 /** Structurally the same as @al/domain's CommentAnchor. */
 export interface ReviewAnchor extends NormRect {
@@ -56,34 +76,53 @@ export interface ReviewAnchor extends NormRect {
   page: number;
 }
 
+/** A point on the page as displayed, 0..1 of its width / height, top-left origin. */
+export interface MarkPoint {
+  x: number;
+  y: number;
+}
+
 export interface ReviewComment extends NormRect {
   id: string;
   /** 1-based */
   page: number;
   status: string;
   /**
-   * Short text shown on the box, e.g. the comment's number. In sticker style a
-   * label of up to 4 characters is the sticker's face; a longer one is shown
-   * in its preview and the face shows the comment's position in `comments`.
+   * The comment's text: shown in a mark's preview card. A comment without a
+   * `kind` (an area box, the original style) shows it on the box itself.
    */
   label?: string;
-  /** Sticker style: the text its preview shows (e.g. the start of the comment). */
-  text?: string;
-  /** Not published yet: drawn with a dashed outline. */
+  /** What is drawn: a note (sticker), an X, or a line. None: an outlined area box (the original style). */
+  kind?: MarkKind | null;
+  /** "#rrggbb"; null/absent: red. */
+  color?: string | null;
+  /** A line's two ends. */
+  points?: ReadonlyArray<MarkPoint> | null;
+  /** The number on the mark. Default: its position in `comments`, from 1. */
+  number?: string | number;
+  /** Not published yet: drawn dashed, and (with onUpdateDraft / onDelete) editable. */
   draft?: boolean;
 }
 
 export interface DrawResult {
   anchor: ReviewAnchor;
-  /** PNG of the marked area with a small margin. */
+  /** PNG of the marked area with a small margin, the mark drawn on it. */
   snapshot: Blob;
 }
 
-export interface MagnifierOptions {
-  /** Starting magnification over the page as displayed. Default 2.5 (1.5–6). */
-  power?: number;
-  /** Lens diameter, CSS px. Default 160. */
-  size?: number;
+/** A new mark. `anchor` is its area (a line's: the box around it). */
+export interface CreateResult extends DrawResult {
+  kind: MarkKind;
+  color: string;
+  /** A line's two ends; absent for a note or an X. */
+  points?: MarkPoint[];
+}
+
+/** A change to one of my draft marks: only the fields that changed. */
+export interface DraftPatch {
+  anchor?: ReviewAnchor;
+  color?: string;
+  points?: MarkPoint[];
 }
 
 export interface PdfReviewViewerProps {
@@ -92,37 +131,39 @@ export interface PdfReviewViewerProps {
   comments?: readonly ReviewComment[];
   selectedCommentId?: string | null;
   onSelectComment?: (id: string) => void;
+  /** A click on an empty part of the page (select tool), or Escape. */
+  onClearSelection?: () => void;
   /** How resolved comments are drawn; a selected one is always shown. Default "faint". */
   resolvedComments?: "faint" | "hidden";
   /** Default: any status starting with "RESOLVED". */
   isResolved?: (status: string) => boolean;
-  /** Accessible name of a comment box or sticker. Default: "הערה <label>". */
+  /** Accessible name of a mark. Default: "הערה <number>" (or "הערה <label>" for an area box). */
   commentAriaLabel?: (comment: ReviewComment) => string;
-  /**
-   * "box" (default): an outlined box over each marked area.
-   * "sticker": a small numbered note beside the area that opens to a preview
-   * on hover, keyboard focus or click/tap.
-   */
-  commentStyle?: "box" | "sticker";
-  /** Offer the draw-mode toggle. */
+  /** Show the marking tools. */
   canDraw?: boolean;
-  /** Controlled draw mode; omit to let the viewer own it. */
+  /** Controlled tool; omit to let the viewer own it. */
+  tool?: ViewerTool;
+  onToolChange?: (tool: ViewerTool) => void;
+  /** Older switch: true = a marking tool is active (the last one used, a note at first). */
   drawMode?: boolean;
   onDrawModeChange?: (on: boolean) => void;
+  /** Controlled colour of the next mark ("#rrggbb"); omit to let the viewer own it (red at first). */
+  color?: string;
+  onColorChange?: (color: string) => void;
+  /** A new mark was placed. */
+  onCreate?: (result: CreateResult) => void;
+  /** Older name for onCreate (called with the same object, only when onCreate is absent). */
   onDrawComplete?: (result: DrawResult) => void;
+  /** A draft mark was moved, resized, re-coloured or had a line end moved. Without it drafts are not editable. */
+  onUpdateDraft?: (id: string, patch: DraftPatch) => void;
+  /** Delete a draft mark (Delete key or the toolbar button). */
+  onDelete?: (id: string) => void;
   /**
-   * In draw mode a single tap/click marks an area of this size (fractions of
+   * A tap with the note or X tool marks an area of this size (fractions of
    * the page) around the point. Default { width: 0.28, height: 0.045 };
    * false: only a drag marks.
    */
   tapArea?: { width: number; height: number } | false;
-  /** The magnifier button: shown unless false; an object sets its defaults. */
-  magnifier?: boolean | MagnifierOptions;
-  /** Controlled magnifier mode; omit to let the viewer own it. */
-  magnifierMode?: boolean;
-  onMagnifierModeChange?: (on: boolean) => void;
-  /** The floating bar that explains and ends draw / magnifier mode. Default true. */
-  modeBar?: boolean;
   /** Device pixels per PDF point for snapshots. Default 2 × devicePixelRatio, at most 4. */
   snapshotScale?: number;
   onLoad?: (info: { doc: PDFDocumentProxy; numPages: number }) => void;
@@ -132,27 +173,30 @@ export interface PdfReviewViewerProps {
   style?: CSSProperties;
 }
 
-const ZOOM_STEP = 1.2;
 /** Pages within this many viewport heights of the view keep a bitmap. */
 const RENDER_MARGIN = 1;
 /** Re-raster pages only once the zoom has been still this long (a stretched bitmap shows meanwhile). */
 const RASTER_SETTLE_MS = 140;
 /** How long the "1 / 2" pill stays after scrolling stops. */
 const PILL_MS = 1200;
-/** Touch: hold this long in magnifier mode before the lens appears… */
-const HOLD_MS = 260;
-/** …without moving more than this (a move is a scroll). */
-const HOLD_SLOP = 8;
-/** Alt+wheel: this much delta per power step. */
-const WHEEL_POWER_DELTA = 60;
+/** How long a tool's hint stays. */
+const HINT_MS = 3500;
 
 const defaultIsResolved = (s: string) => s.startsWith("RESOLVED");
-const defaultAriaLabel = (c: ReviewComment) => (c.label ? `הערה ${c.label}` : "הערה");
 
 interface Draft {
   pageIndex: number;
+  kind: MarkKind | "AREA";
   rect: NormRect;
+  points?: MarkPoint[];
   pending?: boolean;
+}
+
+/** Geometry/colour shown instead of the comment's own while it is being edited. */
+interface Edit {
+  rect?: NormRect;
+  points?: MarkPoint[];
+  color?: string;
 }
 
 const ERROR_TEXT = {
@@ -160,6 +204,9 @@ const ERROR_TEXT = {
   engine: "רכיב התצוגה לא נטען. נסו לרענן את הדף.",
   corrupt: "לא ניתן לפתוח את הקובץ.",
 };
+
+const sig = (c: ReviewComment) =>
+  `${c.x},${c.y},${c.width},${c.height},${c.color ?? ""},${(c.points ?? []).map((p) => `${p.x}:${p.y}`).join(";")}`;
 
 export function PdfReviewViewer(props: PdfReviewViewerProps) {
   const {
@@ -169,17 +216,12 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
     selectedCommentId = null,
     resolvedComments = "faint",
     isResolved = defaultIsResolved,
-    commentAriaLabel = defaultAriaLabel,
-    commentStyle = "box",
     canDraw = false,
-    modeBar = true,
   } = props;
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const lensRef = useRef<MagnifierHandle>(null);
   const cb = useRef(props);
   cb.current = props;
 
@@ -188,49 +230,59 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
   const [error, setError] = useState<PdfOpenError | null>(null);
   const [zoom, setZoom] = useState(1);
   const [rasterZoom, setRasterZoom] = useState(1);
-  const [fitWidth, setFitWidth] = useState(true);
+  const [fit, setFit] = useState<FitMode>("width");
   const [view, setView] = useState({ top: 0, left: 0, width: 0, height: 0 });
-  const [ownDrawMode, setOwnDrawMode] = useState(false);
-  const [ownMagnifier, setOwnMagnifier] = useState(false);
+  const [ownTool, setOwnTool] = useState<ViewerTool>("select");
+  const [lastTool, setLastTool] = useState<MarkKind>("NOTE");
+  const [ownColor, setOwnColor] = useState<string>(DEFAULT_MARK_COLOR);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [pageInput, setPageInput] = useState("1");
   const [pill, setPill] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [pendingEdits, setPendingEdits] = useState<Map<string, Edit & { base: string }>>(() => new Map());
+  const [liveEdit, setLiveEdit] = useState<(Edit & { id: string }) | null>(null);
   const coarse = useMedia("(pointer: coarse)");
 
-  const magnifierOpts = typeof props.magnifier === "object" ? props.magnifier : {};
-  const magnifierAvailable = props.magnifier !== false;
-  const lensSize = magnifierOpts.size ?? LENS_SIZE;
-  const [lensPower, setLensPower] = useState(() => clampPower(magnifierOpts.power ?? LENS_POWER));
-
   const dragRef = useRef<PointerDragHandle | null>(null);
+  const suppressClick = useRef<string | null>(null);
   const anchorAfterZoom = useRef<ZoomAnchor | null>(null);
+  const alignPageAfterZoom = useRef<number | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
-  const fitRef = useRef(fitWidth);
-  fitRef.current = fitWidth;
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
 
-  const drawMode = canDraw && (props.drawMode ?? ownDrawMode);
-  const magnifying = magnifierAvailable && !drawMode && (props.magnifierMode ?? ownMagnifier);
+  /* ---------- tool and colour (each controlled or owned) ---------- */
+  const tool: ViewerTool = !canDraw
+    ? "select"
+    : (props.tool ??
+      (props.drawMode === undefined ? ownTool : props.drawMode ? (ownTool !== "select" ? ownTool : lastTool) : "select"));
+  const drawing = tool !== "select";
+  const color = markColor(props.color ?? ownColor);
 
-  const setMagnifierMode = useCallback((on: boolean) => {
-    setOwnMagnifier(on);
-    cb.current.onMagnifierModeChange?.(on);
-  }, []);
-  const setDrawMode = useCallback(
-    (on: boolean) => {
-      setOwnDrawMode(on);
-      cb.current.onDrawModeChange?.(on);
-      if (on && magnifying) setMagnifierMode(false); // one mode at a time
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const coarseRef = useRef(coarse);
+  coarseRef.current = coarse;
+  const setTool = useCallback(
+    (t: ViewerTool) => {
+      const was = toolRef.current;
+      setOwnTool(t);
+      if (t !== "select") setLastTool(t);
+      cb.current.onToolChange?.(t);
+      if ((was !== "select") !== (t !== "select")) cb.current.onDrawModeChange?.(t !== "select");
+      if (t !== "select" && t !== was) setHint(hintFor(t, coarseRef.current));
     },
-    [magnifying, setMagnifierMode],
+    [],
   );
-  const toggleMagnifier = () => {
-    if (!magnifying && drawMode) setDrawMode(false);
-    setMagnifierMode(!magnifying);
-  };
+
+  useEffect(() => {
+    if (!hint) return;
+    const t = window.setTimeout(() => setHint(null), HINT_MS);
+    return () => window.clearTimeout(t);
+  }, [hint]);
 
   /* ---------- loading ---------- */
   useEffect(() => {
@@ -248,10 +300,12 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
           const vp = p.getViewport({ scale: CSS_UNITS });
           return { width: vp.width, height: vp.height };
         });
-        // Fit the width before the first paint, so pages never render at 100% and then again.
-        const w = scrollerRef.current?.clientWidth ?? 0;
-        if (fitRef.current && w > 0) {
-          const z = clampZoom(fitWidthZoom(sizes, w, spacingFor(w)));
+        // Fit before the first paint, so pages never render at 100% and then again.
+        const el = scrollerRef.current;
+        if (fitRef.current && el && el.clientWidth > 0) {
+          const v = { width: el.clientWidth, height: el.clientHeight };
+          const sp = spacingFor(v.width);
+          const z = clampZoom(fitRef.current === "page" ? fitPageZoom(sizes, v, sp) : fitWidthZoom(sizes, v.width, sp));
           setZoom(z);
           setRasterZoom(z);
         }
@@ -284,13 +338,10 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
   const currentPage = nav.index + 1;
 
   useEffect(() => {
-    if (!currentPage) return;
-    setPageInput(String(currentPage));
-    cb.current.onPageChange?.(currentPage);
+    if (currentPage) cb.current.onPageChange?.(currentPage);
   }, [currentPage]);
 
   // Track the scroller's viewport (rAF-throttled) and size; flash the page pill while scrolling.
-  const onScrollExtra = useRef<() => void>(() => {});
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -309,7 +360,6 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
     };
     const onScroll = () => {
       schedule();
-      onScrollExtra.current();
       setPill(true);
       window.clearTimeout(pillTimer);
       pillTimer = window.setTimeout(() => setPill(false), PILL_MS);
@@ -338,15 +388,20 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
 
   // Put the anchored point back under the focal point, before the browser paints.
   useLayoutEffect(() => {
-    const a = anchorAfterZoom.current;
     const el = scrollerRef.current;
+    const a = anchorAfterZoom.current;
+    const align = alignPageAfterZoom.current;
     anchorAfterZoom.current = null;
-    if (a && el) {
+    alignPageAfterZoom.current = null;
+    if (!el) return;
+    if (align !== null && layout.tops[align] !== undefined) {
+      el.scrollTop = Math.max(0, layout.tops[align]! - sp.pad);
+      el.scrollLeft = 0;
+    } else if (a) {
       const s = scrollForAnchor(layout, a);
       el.scrollLeft = s.scrollLeft;
       el.scrollTop = s.scrollTop;
     }
-    refreshLens();
   }, [layout]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-raster once the zoom settles; until then the old bitmap is stretched.
@@ -356,14 +411,30 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
     return () => window.clearTimeout(t);
   }, [zoom, rasterZoom]);
 
+  // Keep fitting while the view changes size.
   useEffect(() => {
-    if (!fitWidth || !view.width || !baseSizes.length) return;
-    zoomTo(fitWidthZoom(baseSizes, view.width, spacingFor(view.width)), { x: view.width / 2, y: 0 });
-  }, [fitWidth, view.width, baseSizes, zoomTo]);
+    if (!fit || !view.width || !baseSizes.length) return;
+    const s = spacingFor(view.width);
+    const z = fit === "page" ? fitPageZoom(baseSizes, view, s) : fitWidthZoom(baseSizes, view.width, s);
+    zoomTo(z, { x: view.width / 2, y: 0 });
+  }, [fit, view.width, view.height, baseSizes, zoomTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const userZoom = (next: number, focal?: { x: number; y: number }) => {
-    setFitWidth(false);
+    setFit(null);
     zoomTo(next, focal);
+  };
+  const chooseFit = (mode: "width" | "page") => {
+    if (mode === "page" && nav.index >= 0) alignPageAfterZoom.current = nav.index;
+    setFit(mode);
+    // already at that zoom: still bring the current page into place
+    if (mode === "page" && nav.index >= 0) {
+      const el = scrollerRef.current;
+      const z = fitPageZoom(baseSizes, view, spacingFor(view.width));
+      if (el && Math.abs(clampZoom(z) - zoomRef.current) < 1e-6) {
+        alignPageAfterZoom.current = null;
+        el.scrollTo({ top: Math.max(0, layout.tops[nav.index]! - sp.pad), behavior: scrollBehavior() });
+      }
+    }
   };
   useZoomGestures(scrollerRef, innerRef, { zoom, onCommit: userZoom });
 
@@ -375,54 +446,93 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
     el.scrollTo({ top: Math.max(0, layout.tops[page - 1]! - sp.pad), behavior: scrollBehavior() });
   };
 
-  /* ---------- comments ---------- */
+  /* ---------- comments, with edits in flight ---------- */
+  // An edit waits here until the host's copy of the comment changes (it caught up, or overruled it).
+  useEffect(() => {
+    if (!pendingEdits.size) return;
+    let changed = false;
+    const next = new Map(pendingEdits);
+    for (const [id, e] of pendingEdits) {
+      const c = comments.find((x) => x.id === id);
+      if (!c || sig(c) !== e.base) {
+        next.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) setPendingEdits(next);
+  }, [comments, pendingEdits]);
+
+  const effective = useCallback(
+    (c: ReviewComment): ReviewComment => {
+      const pend = pendingEdits.get(c.id);
+      const edits = [pend && pend.base === sig(c) ? pend : null, liveEdit?.id === c.id ? liveEdit : null];
+      let out = c;
+      for (const e of edits) {
+        if (!e) continue;
+        out = { ...out, ...(e.rect ?? {}), ...(e.points ? { points: e.points } : {}), ...(e.color ? { color: e.color } : {}) };
+      }
+      return out;
+    },
+    [pendingEdits, liveEdit],
+  );
+
   const visible = useMemo(() => {
-    const m = new Map<number, Array<{ c: ReviewComment; serial: number }>>();
-    comments.forEach((c, i) => {
-      if (isResolved(c.status) && resolvedComments === "hidden" && c.id !== selectedCommentId) return;
+    const m = new Map<number, Array<{ c: ReviewComment; number: string }>>();
+    comments.forEach((raw, i) => {
+      if (isResolved(raw.status) && resolvedComments === "hidden" && raw.id !== selectedCommentId) return;
+      const c = effective(raw);
       const list = m.get(c.page) ?? [];
-      list.push({ c, serial: i + 1 });
+      list.push({ c, number: String(c.number ?? i + 1) });
       m.set(c.page, list);
     });
     return m;
-  }, [comments, isResolved, resolvedComments, selectedCommentId]);
+  }, [comments, isResolved, resolvedComments, selectedCommentId, effective]);
 
   const stickerSpots = useMemo(() => {
     const out = new Map<string, Point>();
-    if (commentStyle !== "sticker") return out;
     for (const [page, list] of visible) {
       const size = layout.sizes[page - 1];
       if (!size) continue;
+      const notes = list.filter(({ c }) => c.kind === "NOTE");
       const spots = layoutStickers(
-        list.map(({ c }) => ({ id: c.id, area: normToPixelRect(c, size) })),
+        notes.map(({ c }) => ({ id: c.id, area: normToPixelRect(c, size) })),
         size,
         STICKER_SIZE,
       );
       for (const [id, p] of spots) out.set(id, p);
     }
     return out;
-  }, [commentStyle, visible, layout.sizes]);
+  }, [visible, layout.sizes]);
 
-  // The host selected a comment: open its sticker.
+  const selected = selectedCommentId ? comments.find((c) => c.id === selectedCommentId) : undefined;
+  const canEdit = (c: ReviewComment | undefined) => !!c?.draft && !!props.onUpdateDraft;
+  const canDelete = !!selected?.draft && !!props.onDelete;
+
+  // The host selected a mark: open its preview.
   useEffect(() => {
-    if (commentStyle === "sticker") setOpenId(selectedCommentId);
-  }, [selectedCommentId, commentStyle]);
+    const c = selectedCommentId ? comments.find((x) => x.id === selectedCommentId) : undefined;
+    setOpenId(c?.kind ? c.id : null);
+  }, [selectedCommentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A press anywhere but on a sticker closes an open preview.
+  // A press anywhere but on a mark closes an open preview.
   useEffect(() => {
     if (!openId) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Element | null;
-      if (t?.closest?.(".alpr-sticker, .alpr-note-area")) return;
+      if (t?.closest?.(".alpr-mark")) return;
       setOpenId(null);
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [openId]);
 
-  const activate = (id: string) => {
-    setOpenId((o) => (o === id ? null : id));
-    cb.current.onSelectComment?.(id);
+  const activate = (c: ReviewComment) => {
+    if (suppressClick.current === c.id) {
+      suppressClick.current = null;
+      return;
+    }
+    if (c.kind) setOpenId((o) => (o === c.id ? null : c.id));
+    cb.current.onSelectComment?.(c.id);
   };
 
   // Bring the selected comment into view (once per selection, once the layout exists).
@@ -441,33 +551,113 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
     revealed.current = selectedCommentId;
     let r = normToPixelRect(c, size);
     const spot = stickerSpots.get(c.id);
-    if (spot) {
-      const left = Math.min(r.left, spot.x);
-      const top = Math.min(r.top, spot.y);
-      r = {
-        left,
-        top,
-        width: Math.max(r.left + r.width, spot.x + STICKER_SIZE.width) - left,
-        height: Math.max(r.top + r.height, spot.y + STICKER_SIZE.height) - top,
-      };
-    }
+    if (spot) r = union(r, { left: spot.x, top: spot.y, width: STICKER_SIZE.width, height: STICKER_SIZE.height });
     const top = scrollToReveal(el.scrollTop, el.clientHeight, layout.tops[i]! + r.top, r.height);
     const left = scrollToReveal(el.scrollLeft, el.clientWidth, layout.lefts[i]! + r.left, r.width);
     if (top !== null || left !== null)
       el.scrollTo({ top: top ?? el.scrollTop, left: left ?? el.scrollLeft, behavior: scrollBehavior() });
   }, [selectedCommentId, comments, layout, numPages, stickerSpots]);
 
-  /* ---------- drawing ---------- */
+  /* ---------- editing a draft mark ---------- */
+  const commitEdit = (raw: ReviewComment, edit: Edit) => {
+    setPendingEdits((m) => {
+      const next = new Map(m);
+      const prev = next.get(raw.id);
+      next.set(raw.id, { ...(prev && prev.base === sig(raw) ? prev : {}), ...edit, base: sig(raw) });
+      return next;
+    });
+    const patch: DraftPatch = {};
+    if (edit.rect) patch.anchor = { versionNumber, page: raw.page, ...edit.rect };
+    if (edit.points) patch.points = edit.points;
+    if (edit.color) patch.color = edit.color;
+    cb.current.onUpdateDraft?.(raw.id, patch);
+  };
+
+  const pressMark = (raw: ReviewComment, grip: Grip) => (e: ReactPointerEvent) => {
+    if (drawing || !canEdit(raw) || dragRef.current?.active()) return;
+    const isSelected = raw.id === selectedCommentId;
+    // On a touch screen a first tap selects; dragging starts once it is selected (so a swipe still scrolls).
+    if (e.pointerType === "touch" && !isSelected) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.stopPropagation();
+    const overlay = (e.currentTarget as Element).closest(".alpr-overlay");
+    if (!overlay) return;
+    const c = effective(raw);
+    const or = overlay.getBoundingClientRect();
+    const size = { width: or.width, height: or.height };
+    const local = (ev: PointerPoint): Point => ({ x: ev.clientX - or.left, y: ev.clientY - or.top });
+    const baseRect = normToPixelRect(c, size);
+    const basePts = (c.points ?? []).map((p) => pxPoint(p, size));
+    const isLine = c.kind === "LINE" && basePts.length >= 2;
+    if (!isSelected) cb.current.onSelectComment?.(raw.id);
+
+    const geometry = (ev: PointerPoint, dx: number, dy: number): { rect: PixelRect; points?: Point[] } => {
+      if (grip === "body") {
+        if (isLine) {
+          const pts = movePoints(basePts, dx, dy, size);
+          return { rect: pointsBounds(pts), points: pts };
+        }
+        return { rect: moveRect(baseRect, dx, dy, size) };
+      }
+      if (grip === 0 || grip === 1) {
+        const pts = moveEndpoint(basePts, grip, local(ev), size);
+        return { rect: pointsBounds(pts), points: pts };
+      }
+      return { rect: resizeRect(baseRect, grip, local(ev), size) };
+    };
+    const toEdit = (g: { rect: PixelRect; points?: Point[] }): Edit => ({
+      rect: pixelRectToNorm(g.rect, size),
+      ...(g.points ? { points: g.points.map((p) => normPoint(p, size)) } : {}),
+    });
+
+    dragRef.current = startPointerDrag(e, {
+      threshold: grip === "body" ? 3 : 0,
+      onMove: (ev, d) => setLiveEdit({ id: raw.id, ...toEdit(geometry(ev, d.dx, d.dy)) }),
+      onCancel: () => {
+        dragRef.current = null;
+        setLiveEdit(null);
+      },
+      onUp: (ev, d) => {
+        dragRef.current = null;
+        setLiveEdit(null);
+        if (!d.moved) return; // a click: selection and the preview are the click's
+        suppressClick.current = raw.id;
+        window.setTimeout(() => {
+          if (suppressClick.current === raw.id) suppressClick.current = null;
+        }, 400);
+        commitEdit(raw, toEdit(geometry(ev, d.dx, d.dy)));
+      },
+    });
+  };
+
+  const changeColor = (c: string) => {
+    setOwnColor(c);
+    cb.current.onColorChange?.(c);
+    if (selected && canEdit(selected) && selected.kind && markColor(effective(selected).color) !== c)
+      commitEdit(selected, { color: c });
+  };
+
+  const deleteSelected = () => {
+    if (!selected || !canDelete) return;
+    setOpenId(null);
+    cb.current.onDelete?.(selected.id);
+  };
+
+  /* ---------- placing a new mark ---------- */
   const tapArea = props.tapArea === false ? null : (props.tapArea ?? TAP_AREA);
 
-  const finishDraw = async (pageIndex: number, rect: NormRect) => {
+  const finishMark = async (pageIndex: number, kind: MarkKind, rect: NormRect, points?: MarkPoint[]) => {
     if (!doc) return;
-    setDraft({ pageIndex, rect, pending: true });
+    setDraft({ pageIndex, kind, rect, points, pending: true });
     const anchor: ReviewAnchor = { versionNumber, page: pageIndex + 1, ...rect };
     const scale = cb.current.snapshotScale ?? Math.min(4, 2 * Math.max(1, window.devicePixelRatio || 1));
+    const markCol = color;
     try {
-      const snapshot = await renderRegionSnapshot(doc, anchor, scale);
-      cb.current.onDrawComplete?.({ anchor, snapshot });
+      const snapshot = await renderRegionSnapshot(doc, anchor, scale, { outline: markCol, mark: { kind, points } });
+      const result: CreateResult = { anchor, snapshot, kind, color: markCol, ...(points ? { points } : {}) };
+      if (cb.current.onCreate) cb.current.onCreate(result);
+      else cb.current.onDrawComplete?.(result);
+      setTool("select"); // one mark per pick of a tool; the new draft is ready to adjust
     } catch (err) {
       console.error("[@al/pdf-review] snapshot failed", err);
     } finally {
@@ -476,7 +666,8 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
   };
 
   const startDraw = (pageIndex: number) => (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drawMode || dragRef.current?.active() || draft?.pending) return;
+    if (!drawing || dragRef.current?.active() || draft?.pending) return;
+    const kind = tool;
     const overlay = e.currentTarget;
     const local = (ev: PointerPoint) => {
       const r = overlay.getBoundingClientRect();
@@ -488,8 +679,18 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
       threshold: 0,
       onMove: (ev) => {
         const { size, point } = local(ev);
-        const rect = clampRectToPage(rectFromDrag(start, point), size);
-        setDraft({ pageIndex, rect: pixelRectToNorm(rect, size) });
+        if (kind === "LINE") {
+          const end = clampPoint(point, size);
+          const pts = [start, end];
+          setDraft({
+            pageIndex,
+            kind,
+            rect: pixelRectToNorm(pointsBounds(pts), size),
+            points: pts.map((p) => normPoint(p, size)),
+          });
+          return;
+        }
+        setDraft({ pageIndex, kind, rect: pixelRectToNorm(clampRectToPage(rectFromDrag(start, point), size), size) });
       },
       onCancel: () => {
         dragRef.current = null;
@@ -498,133 +699,36 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
       onUp: (ev) => {
         dragRef.current = null;
         const { size, point } = local(ev);
+        if (kind === "LINE") {
+          const line = lineFromDrag(start, point, size);
+          if (!line) {
+            setDraft(null);
+            setHint(hintFor("LINE", coarseRef.current));
+            return;
+          }
+          void finishMark(pageIndex, kind, pixelRectToNorm(pointsBounds(line), size), line.map((p) => normPoint(p, size)));
+          return;
+        }
         const mark = resolveMarkGesture(start, point, size, { tapArea });
         if (!mark) {
           setDraft(null);
           return;
         }
-        void finishDraw(pageIndex, pixelRectToNorm(mark.rect, size));
+        void finishMark(pageIndex, kind, pixelRectToNorm(mark.rect, size));
       },
     });
   };
 
   useEffect(() => {
-    if (!drawMode) dragRef.current?.cancel();
-  }, [drawMode]);
+    if (!drawing) dragRef.current?.cancel();
+  }, [drawing]);
 
-  /* ---------- magnifier ---------- */
-  const lensPointer = useRef<{ x: number; y: number; touch: boolean } | null>(null);
-  const hold = useRef<{ id: number; x0: number; y0: number; x: number; y: number; timer: number; active: boolean } | null>(
-    null,
-  );
-
-  const lensTargetAt = (clientX: number, clientY: number, touch: boolean): LensTarget | null => {
-    const inner = innerRef.current;
-    const stage = stageRef.current;
-    const L = layoutRef.current;
-    if (!inner || !stage || !L.sizes.length) return null;
-    const ir = inner.getBoundingClientRect();
-    const sr = stage.getBoundingClientRect();
-    const cx = clientX - ir.left;
-    const cy = clientY - ir.top;
-    let i = Math.max(0, pageIndexAt(L.tops, cy));
-    const next = i + 1;
-    // In the gap between two pages the nearer one is magnified.
-    if (next < L.sizes.length && cy - (L.tops[i]! + L.sizes[i]!.height) > L.tops[next]! - cy) i = next;
-    return { pageIndex: i, x: cx - L.lefts[i]!, y: cy - L.tops[i]!, boxX: clientX - sr.left, boxY: clientY - sr.top, touch };
+  // A click on an empty part of a page (select tool) clears the selection.
+  const onOverlayClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (drawing || e.target !== e.currentTarget) return;
+    setOpenId(null);
+    if (selectedCommentId) cb.current.onClearSelection?.();
   };
-
-  const showLensAt = (x: number, y: number, touch: boolean) => {
-    lensPointer.current = { x, y, touch };
-    const t = lensTargetAt(x, y, touch);
-    if (t) lensRef.current?.show(t);
-    else lensRef.current?.hide();
-  };
-  const hideLens = () => {
-    lensPointer.current = null;
-    lensRef.current?.hide();
-  };
-  const cancelHold = () => {
-    if (hold.current) window.clearTimeout(hold.current.timer);
-    hold.current = null;
-  };
-  /** The content moved under a still pointer (scroll, zoom): look again. */
-  function refreshLens() {
-    const p = lensPointer.current;
-    if (p && lensRef.current?.visible()) showLensAt(p.x, p.y, p.touch);
-  }
-  onScrollExtra.current = refreshLens;
-
-  const lensHandlers = magnifying
-    ? {
-        onPointerDown: (e: ReactPointerEvent) => {
-          if (e.pointerType !== "touch") return showLensAt(e.clientX, e.clientY, false);
-          cancelHold();
-          if (!e.isPrimary) return hideLens(); // a second finger: that is a pinch
-          const h = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, timer: 0, active: false };
-          h.timer = window.setTimeout(() => {
-            h.active = true;
-            showLensAt(h.x, h.y, true);
-            navigator.vibrate?.(8);
-          }, HOLD_MS);
-          hold.current = h;
-        },
-        onPointerMove: (e: ReactPointerEvent) => {
-          if (e.pointerType !== "touch") return showLensAt(e.clientX, e.clientY, false);
-          const h = hold.current;
-          if (!h || h.id !== e.pointerId) return;
-          h.x = e.clientX;
-          h.y = e.clientY;
-          if (h.active) showLensAt(e.clientX, e.clientY, true);
-          else if (Math.hypot(e.clientX - h.x0, e.clientY - h.y0) > HOLD_SLOP) cancelHold(); // a scroll
-        },
-        onPointerUp: (e: ReactPointerEvent) => {
-          if (e.pointerType !== "touch" || hold.current?.id !== e.pointerId) return;
-          cancelHold();
-          hideLens();
-        },
-        onPointerCancel: (e: ReactPointerEvent) => {
-          if (e.pointerType !== "touch") return;
-          cancelHold();
-          hideLens();
-        },
-        onPointerLeave: (e: ReactPointerEvent) => {
-          if (e.pointerType !== "touch") hideLens();
-        },
-      }
-    : {};
-
-  // While the lens follows a finger the page must not scroll; Alt+wheel sets the power.
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!magnifying || !el) return;
-    let acc = 0;
-    const onTouchMove = (e: TouchEvent) => {
-      if (hold.current?.active && e.cancelable) e.preventDefault();
-    };
-    const onWheel = (e: WheelEvent) => {
-      if (!e.altKey || e.ctrlKey || e.metaKey) return;
-      e.preventDefault();
-      acc += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-      if (Math.abs(acc) < WHEEL_POWER_DELTA) return;
-      const dir = acc < 0 ? 1 : -1;
-      acc = 0;
-      setLensPower((p) => stepPower(p, dir));
-    };
-    const onContextMenu = (e: Event) => {
-      if (hold.current) e.preventDefault();
-    };
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("contextmenu", onContextMenu);
-    return () => {
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("contextmenu", onContextMenu);
-      cancelHold();
-      lensPointer.current = null;
-    };
-  }, [magnifying]);
 
   /* ---------- keyboard ---------- */
   useEffect(() => {
@@ -639,28 +743,27 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
           return;
         }
         if (!ours) return;
-        if (drawMode) setDrawMode(false);
-        else if (magnifying) setMagnifierMode(false);
+        if (drawing) setTool("select");
         else if (openId) setOpenId(null);
+        else if (selectedCommentId && cb.current.onClearSelection) cb.current.onClearSelection();
         else return;
         e.preventDefault();
         return;
       }
-      if (!magnifying || !ours || e.ctrlKey || e.metaKey || e.altKey || isTyping(active)) return;
-      if (e.key === "+" || e.key === "=") setLensPower((p) => stepPower(p, 1));
-      else if (e.key === "-" || e.key === "_") setLensPower((p) => stepPower(p, -1));
-      else return;
-      e.preventDefault();
+      if ((e.key === "Delete" || e.key === "Backspace") && ours && !isTyping(active) && canDelete) {
+        e.preventDefault();
+        deleteSelected();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [drawMode, magnifying, openId, setDrawMode, setMagnifierMode]);
+  });
 
   /* ---------- render ---------- */
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   const rasterScale = rasterZoom * CSS_UNITS * dpr;
   const near = { from: view.top - view.height * RENDER_MARGIN, to: view.top + view.height * (1 + RENDER_MARGIN) };
-  const shownPower = effectivePower(lensPower, zoom);
+  const shownColor = selected && canEdit(selected) && selected.kind ? markColor(effective(selected).color) : color;
 
   const errorText =
     error instanceof PdfPasswordError
@@ -677,112 +780,22 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
       className={["alpr-root", props.className].filter(Boolean).join(" ")}
       style={props.style}
       dir="rtl"
-      data-draw-mode={drawMode || undefined}
-      data-magnifier={magnifying || undefined}
-      data-comment-style={commentStyle}
+      data-tool={tool}
+      data-draw-mode={drawing || undefined}
     >
-      <div className="alpr-toolbar" role="toolbar" aria-label="כלי תצוגת מסמך">
-        <div className="alpr-group">
-          <button
-            type="button"
-            className="alpr-btn"
-            aria-label="עמוד קודם"
-            disabled={!numPages || nav.atStart}
-            onClick={() => goToPage(currentPage - 1)}
-          >
-            <Icon d="M6 15l6-6 6 6" />
-          </button>
-          <button
-            type="button"
-            className="alpr-btn"
-            aria-label="עמוד הבא"
-            disabled={!numPages || nav.atEnd || currentPage >= numPages}
-            onClick={() => goToPage(currentPage + 1)}
-          >
-            <Icon d="M6 9l6 6 6-6" />
-          </button>
-          <label className="alpr-page-label">
-            <span className="alpr-sr">מספר עמוד</span>
-            <input
-              className="alpr-page-input"
-              inputMode="numeric"
-              value={pageInput}
-              disabled={!numPages}
-              onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") goToPage(Number(pageInput) || 1);
-              }}
-              onBlur={() => setPageInput(String(currentPage || 1))}
-            />
-            <span aria-hidden="true">/ {numPages || "–"}</span>
-          </label>
-          {/* a phone has no room for the field: the same "1 / 2" as plain text */}
-          <span className="alpr-page-now" dir="ltr">
-            <span className="alpr-sr">עמוד </span>
-            {currentPage || "–"} / {numPages || "–"}
-          </span>
-        </div>
-        <div className="alpr-group">
-          <button type="button" className="alpr-btn" aria-label="הקטנה" onClick={() => userZoom(zoom / ZOOM_STEP)}>
-            <Icon d="M5 12h14" />
-          </button>
-          <output className="alpr-zoom" aria-live="polite" aria-label="רמת הגדלה">
-            {Math.round(zoom * 100)}%
-          </output>
-          <button type="button" className="alpr-btn" aria-label="הגדלה" onClick={() => userZoom(zoom * ZOOM_STEP)}>
-            <Icon d="M5 12h14M12 5v14" />
-          </button>
-          <button
-            type="button"
-            className="alpr-btn"
-            aria-label="התאמה לרוחב"
-            aria-pressed={fitWidth}
-            onClick={() => setFitWidth(true)}
-          >
-            <Icon d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4" />
-          </button>
-        </div>
-        {(magnifierAvailable || canDraw) && (
-          <div className="alpr-group">
-            {magnifierAvailable && (
-              <button
-                type="button"
-                className="alpr-btn"
-                aria-pressed={magnifying}
-                aria-label="זכוכית מגדלת"
-                title="זכוכית מגדלת (Esc לסגירה)"
-                disabled={!doc}
-                onClick={toggleMagnifier}
-              >
-                <Icon d="M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM15.5 15.5L20 20" />
-              </button>
-            )}
-            {canDraw && (
-              <button
-                type="button"
-                className="alpr-btn alpr-btn-draw"
-                aria-pressed={drawMode}
-                aria-label="סימון אזור להערה"
-                title="סימון אזור להערה (Esc לביטול)"
-                onClick={() => setDrawMode(!drawMode)}
-              >
-                <Icon d="M4 4h6M14 4h6v6M20 14v6h-6M10 20H4v-6M4 10V4" />
-                <span className="alpr-btn-text">סימון אזור</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      {canDraw && (
+        <MarkToolbar
+          tool={tool}
+          onTool={setTool}
+          color={shownColor}
+          onColor={changeColor}
+          canDelete={canDelete}
+          onDelete={deleteSelected}
+        />
+      )}
 
-      <div className="alpr-stage" ref={stageRef}>
-        <div
-          className="alpr-scroller"
-          ref={scrollerRef}
-          dir="ltr"
-          tabIndex={0}
-          aria-label="מסמך"
-          {...lensHandlers}
-        >
+      <div className="alpr-stage">
+        <div className="alpr-scroller" ref={scrollerRef} dir="ltr" tabIndex={0} aria-label="מסמך">
           <div
             className="alpr-pages"
             ref={innerRef}
@@ -816,124 +829,116 @@ export function PdfReviewViewer(props: PdfReviewViewerProps) {
                     rasterScale={rasterScale}
                     render={inRange}
                     priority={inView ? 2 : 1}
-                    drawing={drawMode}
-                    onPointerDown={drawMode ? startDraw(i) : undefined}
+                    drawing={drawing}
+                    onPointerDown={drawing ? startDraw(i) : undefined}
+                    onClick={drawing ? undefined : onOverlayClick}
                   >
-                    {commentStyle === "sticker"
-                      ? list.map(({ c, serial }) => {
-                          const resolved = isResolved(c.status);
-                          const face = stickerFace(c.label, serial);
-                          const longLabel = c.label && face !== c.label.trim() ? c.label : undefined;
-                          return (
-                            <StickerNote
-                              key={c.id}
-                              id={c.id}
-                              area={c}
-                              pos={stickerSpots.get(c.id) ?? { x: 0, y: 0 }}
-                              page={size}
-                              size={STICKER_SIZE}
-                              face={face}
-                              heading={`הערה ${face}${c.draft ? " · טיוטה" : resolved ? " · נסגרה" : ""}`}
-                              body={c.text ?? longLabel}
-                              open={!drawMode && (openId === c.id || hoverId === c.id || focusId === c.id)}
-                              selected={c.id === selectedCommentId}
-                              resolved={resolved}
-                              draft={!!c.draft}
-                              ariaLabel={commentAriaLabel(c)}
-                              onActivate={() => activate(c.id)}
-                              onHover={(on) => setHoverId((h) => (on ? c.id : h === c.id ? null : h))}
-                              onKeyboardFocus={(on) => setFocusId((f) => (on ? c.id : f === c.id ? null : f))}
-                            />
-                          );
-                        })
-                      : list.map(({ c }) => (
+                    {list.map(({ c, number }) => {
+                      const resolved = isResolved(c.status);
+                      const raw = comments.find((x) => x.id === c.id) ?? c;
+                      if (!c.kind)
+                        return (
                           <CommentBox
                             key={c.id}
                             comment={c}
                             selected={c.id === selectedCommentId}
-                            resolved={isResolved(c.status)}
-                            ariaLabel={commentAriaLabel(c)}
-                            onSelect={props.onSelectComment}
+                            resolved={resolved}
+                            ariaLabel={props.commentAriaLabel?.(c) ?? (c.label ? `הערה ${c.label}` : "הערה")}
+                            editable={canEdit(raw) && !drawing}
+                            onPress={pressMark(raw, "body")}
+                            onSelect={() => activate(raw)}
                           />
-                        ))}
-                    {draft?.pageIndex === i && (
-                      <div
-                        className="alpr-draft"
-                        data-pending={draft.pending || undefined}
-                        style={percentBox(draft.rect)}
-                        aria-hidden="true"
-                      />
-                    )}
+                        );
+                      const rect = normToPixelRect(c, size);
+                      const status = c.draft ? " · טיוטה" : resolved ? " · נסגרה" : "";
+                      return (
+                        <MarkView
+                          key={c.id}
+                          id={c.id}
+                          kind={c.kind}
+                          rect={rect}
+                          points={c.points?.map((p) => pxPoint(p, size))}
+                          page={size}
+                          color={markColor(c.color)}
+                          number={number}
+                          heading={`${KIND_NAME[c.kind]} ${number}${status}`}
+                          body={c.label}
+                          stickerPos={stickerSpots.get(c.id)}
+                          open={!drawing && !liveEdit && (openId === c.id || hoverId === c.id || focusId === c.id)}
+                          selected={c.id === selectedCommentId}
+                          resolved={resolved}
+                          draft={!!c.draft}
+                          editable={canEdit(raw)}
+                          inert={drawing}
+                          ariaLabel={props.commentAriaLabel?.(c) ?? `${KIND_NAME[c.kind]} ${number}${status}`}
+                          onPress={(e, grip) => pressMark(raw, grip)(e)}
+                          onActivate={() => activate(raw)}
+                          onHover={(on) => setHoverId((h) => (on ? c.id : h === c.id ? null : h))}
+                          onKeyboardFocus={(on) => setFocusId((f) => (on ? c.id : f === c.id ? null : f))}
+                        />
+                      );
+                    })}
+                    {draft?.pageIndex === i && <DraftShape draft={draft} size={size} color={color} />}
                   </PageView>
                 );
               })}
           </div>
         </div>
 
-        {magnifying && doc && (
-          <Magnifier
-            ref={lensRef}
-            doc={doc}
-            zoom={zoom}
-            power={lensPower}
-            size={lensSize}
-            pageSize={(i) => layoutRef.current.sizes[i]}
-            pageCanvas={(i) => scrollerRef.current?.querySelector<HTMLCanvasElement>(`.alpr-page[data-page="${i + 1}"] canvas`) ?? null}
-            bounds={() => ({ width: stageRef.current?.clientWidth ?? 0, height: stageRef.current?.clientHeight ?? 0 })}
-          />
-        )}
-
         {numPages > 1 && (
           <div className="alpr-pill" data-visible={pill || undefined} aria-hidden="true" dir="ltr">
             {currentPage} / {numPages}
           </div>
         )}
-
-        {modeBar && drawMode && (
-          <div className="alpr-modebar" role="group" aria-label="סימון אזור">
-            <span className="alpr-modebar-text">
-              {coarse ? "הקישו על המקום, או גררו מלבן" : "לחצו על המקום, או גררו מלבן"}
-            </span>
-            <button type="button" className="alpr-btn alpr-modebar-done" onClick={() => setDrawMode(false)}>
-              סיום
-            </button>
-          </div>
-        )}
-        {modeBar && magnifying && (
-          <div className="alpr-modebar" role="group" aria-label="זכוכית מגדלת">
-            <span className="alpr-modebar-text">{coarse ? "לחיצה ארוכה וגרירה" : "הזיזו את העכבר על המסמך"}</span>
-            <button
-              type="button"
-              className="alpr-btn"
-              aria-label="פחות הגדלה בזכוכית"
-              disabled={lensPower <= clampPower(0)}
-              onClick={() => setLensPower((p) => stepPower(p, -1))}
-            >
-              <Icon d="M5 12h14" />
-            </button>
-            <output className="alpr-modebar-power" aria-live="polite" aria-label="הגדלת הזכוכית" dir="ltr">
-              ×{formatPower(shownPower)}
-            </output>
-            <button
-              type="button"
-              className="alpr-btn"
-              aria-label="יותר הגדלה בזכוכית"
-              disabled={lensPower >= clampPower(Infinity)}
-              onClick={() => setLensPower((p) => stepPower(p, 1))}
-            >
-              <Icon d="M5 12h14M12 5v14" />
-            </button>
-            <button
-              type="button"
-              className="alpr-btn"
-              aria-label="סגירת הזכוכית המגדלת"
-              onClick={() => setMagnifierMode(false)}
-            >
-              <Icon d="M6 6l12 12M18 6L6 18" />
-            </button>
+        {hint && (
+          <div className="alpr-hint" role="status">
+            {hint}
           </div>
         )}
       </div>
+
+      <ZoomBar
+        zoom={zoom}
+        fit={fit}
+        onStep={(dir) => userZoom(stepZoomPercent(zoom, dir))}
+        onZoom={(z) => userZoom(z)}
+        onFit={chooseFit}
+        page={currentPage}
+        numPages={numPages}
+        atStart={nav.atStart}
+        atEnd={nav.atEnd}
+        onPage={goToPage}
+      />
+    </div>
+  );
+}
+
+const KIND_NAME: Record<MarkKind, string> = { NOTE: "פתק", X: "סימון X", LINE: "קו" };
+
+function hintFor(t: MarkKind, coarse: boolean): string {
+  const tap = coarse ? "הקישו" : "לחצו";
+  if (t === "NOTE") return `${tap} על המקום להוספת פתק`;
+  if (t === "X") return `${tap} על מילה, או גררו מסביב לאזור`;
+  return "גררו מנקודה לנקודה";
+}
+
+function DraftShape({ draft, size, color }: { draft: Draft; size: Size; color: string }) {
+  const style = { "--mark": color } as CSSProperties;
+  if (draft.kind === "LINE" && draft.points && draft.points.length >= 2) {
+    const [a, b] = draft.points.map((p) => pxPoint(p, size)) as [Point, Point];
+    return (
+      <svg className="alpr-draft-svg" style={style} aria-hidden="true" width={size.width} height={size.height}>
+        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+      </svg>
+    );
+  }
+  return (
+    <div className="alpr-draft" data-kind={draft.kind} data-pending={draft.pending || undefined} style={{ ...percentBox(draft.rect), ...style }} aria-hidden="true">
+      {draft.kind === "X" && (
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <path d="M0 0L100 100M100 0L0 100" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
     </div>
   );
 }
@@ -943,7 +948,9 @@ function CommentBox(props: {
   selected: boolean;
   resolved: boolean;
   ariaLabel: string;
-  onSelect?: (id: string) => void;
+  editable: boolean;
+  onPress: (e: ReactPointerEvent) => void;
+  onSelect: () => void;
 }) {
   const { comment, selected, resolved } = props;
   return (
@@ -954,11 +961,13 @@ function CommentBox(props: {
       data-resolved={resolved || undefined}
       data-draft={comment.draft || undefined}
       data-selected={selected || undefined}
+      data-editable={props.editable || undefined}
       data-comment-id={comment.id}
       aria-pressed={selected}
       aria-label={props.ariaLabel}
       style={percentBox(comment)}
-      onClick={() => props.onSelect?.(comment.id)}
+      onPointerDown={props.editable ? props.onPress : undefined}
+      onClick={props.onSelect}
     >
       {comment.label && (
         <span className="alpr-box-label" dir="auto">
@@ -969,12 +978,15 @@ function CommentBox(props: {
   );
 }
 
-function Icon({ d }: { d: string }) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+function union(a: PixelRect, b: PixelRect): PixelRect {
+  const left = Math.min(a.left, b.left);
+  const top = Math.min(a.top, b.top);
+  return {
+    left,
+    top,
+    width: Math.max(a.left + a.width, b.left + b.width) - left,
+    height: Math.max(a.top + a.height, b.top + b.height) - top,
+  };
 }
 
 function scrollBehavior(): ScrollBehavior {

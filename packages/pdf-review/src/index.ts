@@ -1,10 +1,14 @@
 export {
   PdfReviewViewer,
+  type CreateResult,
+  type DraftPatch,
   type DrawResult,
-  type MagnifierOptions,
+  type MarkKind,
+  type MarkPoint,
   type PdfReviewViewerProps,
   type ReviewAnchor,
   type ReviewComment,
+  type ViewerTool,
 } from "./PdfReviewViewer";
 export {
   CSS_UNITS,
@@ -39,14 +43,17 @@ export {
   type Size,
 } from "./geometry";
 export {
-  STICKER_SIZE,
+  COLOR_NAMES,
+  DEFAULT_MARK_COLOR,
+  MARK_COLORS,
   TAP_AREA,
-  layoutStickers,
-  previewPlacement,
+  lineFromDrag,
+  moveEndpoint,
+  movePoints,
+  moveRect,
+  resizeRect,
   resolveMarkGesture,
-  stickerFace,
-  stickerPosition,
   tapRectAt,
+  type Corner,
   type MarkGesture,
-} from "./stickers";
-export { LENS_POWER, LENS_POWER_MAX, LENS_POWER_MIN, LENS_SIZE, lensToPage, pageToLens } from "./lens";
+} from "./marks";

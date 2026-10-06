@@ -1,5 +1,5 @@
 "use client";
-import { memo, useEffect, useRef, type PointerEventHandler, type ReactNode } from "react";
+import { memo, useEffect, useRef, type MouseEventHandler, type PointerEventHandler, type ReactNode } from "react";
 import { releaseCanvas, renderPageCanvas, type PDFDocumentProxy } from "./pdf";
 
 export interface PageViewProps {
@@ -17,6 +17,7 @@ export interface PageViewProps {
   priority: number;
   drawing: boolean;
   onPointerDown?: PointerEventHandler<HTMLDivElement>;
+  onClick?: MouseEventHandler<HTMLDivElement>;
   children?: ReactNode;
 }
 
@@ -78,7 +79,12 @@ export const PageView = memo(function PageView(props: PageViewProps) {
       style={{ left: props.left, top: props.top, width: props.width, height: props.height }}
     >
       <canvas ref={canvasRef} className="alpr-canvas" aria-hidden="true" />
-      <div className="alpr-overlay" data-drawing={props.drawing || undefined} onPointerDown={props.onPointerDown}>
+      <div
+        className="alpr-overlay"
+        data-drawing={props.drawing || undefined}
+        onPointerDown={props.onPointerDown}
+        onClick={props.onClick}
+      >
         {props.children}
       </div>
     </div>
