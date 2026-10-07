@@ -64,6 +64,9 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
           <p className="text-sm text-muted">
             <span className="tabular">{active.length}</span> פעילים. אנשים לא נמחקים: מי שמושבת לא יכול להתחבר, וההיסטוריה שלו נשמרת.
           </p>
+          <p className="text-sm text-muted">
+            מקימים כאן פעם אחת את כל מנהלי הרישום והיועצות. את השיבוץ למסלולים עושים בלשונית &quot;מסלולים והקצאות&quot;.
+          </p>
         </div>
       </div>
 

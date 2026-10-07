@@ -1,7 +1,6 @@
 "use client";
 
 import { BookOpen, CircleAlert, CircleCheck, Download, FileSpreadsheet, ScanSearch, TriangleAlert, Upload } from "lucide-react";
-import Link from "next/link";
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { Tag } from "@/components/Pills";
 import { Spinner } from "@/components/Spinner";
@@ -35,12 +34,8 @@ function ImportGuide() {
           עמודות חובה (בכל סדר): <b>קמפוס</b>, <b>פקולטה</b>, <b>מסלול</b> (שם המסלול), <b>קוד מסלול</b> (ספרות בלבד, למשל 228114002).
         </li>
         <li>
-          עמודה לא חובה: <b>יועצת בקרה</b>, בשם או במייל כמו שהיא רשומה במערכת. בלעדיה, היועצת נלקחת מהקמפוס או מהפקולטה. מנהל הרישום תמיד נקבע לפי
-          הקמפוס או הפקולטה (בלשונית{" "}
-          <Link href="/settings/units" className="font-semibold text-accent underline">
-            קמפוסים ופקולטות
-          </Link>
-          ).
+          עמודות לא חובה: <b>יועץ בקרה</b> ו<b>מנהל רישום</b>, בשם או במייל כמו שהם רשומים במערכת (קודם מקימים אותם בלשונית &quot;אנשים&quot;). בלעדיהן
+          המסלולים נכנסים בלי שיבוץ, ואחר כך משבצים אותם בטבלה למטה, כמה מסלולים בבת אחת.
         </li>
         <li>עמודות נוספות (יעד, הערות וכדומה) לא משנות ולא נקראות.</li>
       </ol>
@@ -49,8 +44,9 @@ function ImportGuide() {
         <ul className="flex list-disc flex-col gap-1 ps-5">
           <li>שורות מקום, כמו &quot;ללא ממ&quot;ה&quot; או קוד &quot;-&quot;, מדולגות.</li>
           <li>שורה בלי פקולטה, עם קוד לא תקין, או עם קוד שמופיע פעמיים באותו קמפוס, מסומנת כבעיה ולא נכנסת. שאר השורות נכנסות.</li>
-          <li>מסלול בלי יועצת (לא בקובץ ולא בקמפוס או בפקולטה) לא נכנס. מסלול בלי מנהל רישום נכנס, ומסומן באדום עד שמגדירים לו.</li>
-          <li>אפשר לייבא שוב את אותו קובץ אחרי שהשלמתם הגדרות: מסלול שכבר קיים לא יוכפל.</li>
+          <li>שם של יועצת או מנהל רישום שלא קיימים במערכת (או שיש שניים כאלה): השורה מסומנת כבעיה ולא נכנסת, ושאר השורות נכנסות.</li>
+          <li>מסלול בלי יועצת או בלי מנהל רישום נכנס, ומסומן באדום עד שמשבצים. אי אפשר לשלוח אותו לבדיקה לפני כן.</li>
+          <li>אפשר לייבא שוב את אותו קובץ: מסלול שכבר קיים לא יוכפל.</li>
         </ul>
       </div>
     </div>
@@ -152,15 +148,12 @@ export function ImportPanel({
             </Tag>
           </div>
 
-          {report.unitsWithoutManager.length > 0 && (
+          {(report.unassigned.noAdvisor > 0 || report.unassigned.noManager > 0) && (
             <p className="flex items-start gap-2 rounded-md bg-warn-soft px-3 py-2 text-sm">
               <TriangleAlert aria-hidden className="mt-0.5 size-4 text-warn" />
               <span>
-                חסר מנהל רישום או יועצת ל: {report.unitsWithoutManager.map((u) => `${u.faculty} (${u.campus})`).join(", ")}. אפשר להגדיר אותם ב
-                <Link href="/settings/units" className="font-semibold text-accent underline">
-                  קמפוסים ופקולטות
-                </Link>{" "}
-                ולייבא שוב: מה שכבר נוסף לא יוכפל.
+                {imported ? "המסלולים שנוספו" : "המסלולים שייכנסו"}: {report.unassigned.noAdvisor} בלי יועצת, {report.unassigned.noManager} בלי מנהל רישום. משבצים אותם בטבלה
+                שמתחת (&quot;רק מה שחסר&quot;), כמה מסלולים בבת אחת.
               </span>
             </p>
           )}
@@ -198,6 +191,7 @@ export function ImportPanel({
                   <span className="text-muted">
                     {r.faculty || "—"} · {r.campus || "—"}
                     {(r.advisorName ?? r.advisor) && <> · יועצת: {r.advisorName ?? r.advisor}</>}
+                    {(r.managerName ?? r.manager) && <> · מנהל רישום: {r.managerName ?? r.manager}</>}
                   </span>
                   {r.problem && <span className="text-bad">{r.problem}</span>}
                 </span>

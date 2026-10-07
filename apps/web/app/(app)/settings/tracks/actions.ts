@@ -27,12 +27,13 @@ export async function createTrackAction(_prev: ActionResult, form: FormData): Pr
       campus: text("קמפוס"),
       faculty: text("פקולטה"),
       advisorId: z.uuid().optional(),
+      registrationManagerId: z.uuid().optional(),
       dueDate: z.iso.date({ message: "תאריך היעד לא תקין" }).optional(),
     }),
     formObject(form),
     (actor, d) => createLetterRequest(actor, d),
     PATHS,
-    "המסלול נוסף. היועצת שלו קיבלה אותו לרשימת המכתבים שלה.",
+    "המסלול נוסף. מי ששובץ בו רואה אותו ברשימה שלו.",
   );
 }
 
@@ -96,7 +97,7 @@ export async function bulkAssignAction(_prev: BulkState, form: FormData): Promis
 /** Takes one extra person off one track. */
 export async function removeExtraAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({ letterId: z.uuid(), userId: z.uuid(), kind: z.enum(["ADVISOR", "MANAGER"]) }),
+    z.object({ letterId: z.uuid(), userId: z.uuid(), kind: z.enum(["ADVISOR", "MANAGER", "COMMENTER"]) }),
     formObject(form),
     (actor, d) => removeLetterPerson(actor, d.letterId, d.userId, d.kind),
     PATHS,

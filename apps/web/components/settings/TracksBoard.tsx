@@ -9,100 +9,106 @@ import { Spinner } from "@/components/Spinner";
 import { btnIcon, btnPrimary, btnSecondary, input, label as labelClass } from "@/components/ui";
 import type { ActionResult } from "@/lib/action-result";
 import type { BulkMode } from "@/lib/settings/assign";
-import type { ManagerSource, PersonRef, TrackAssignment } from "@/lib/settings/queries";
+import type { PersonRef, TrackAssignment } from "@/lib/settings/queries";
 import type { BulkState } from "@/app/(app)/settings/tracks/actions";
 
-const SOURCE: Record<ManagerSource, string> = {
-  TRACK: "נקבע למסלול",
-  FACULTY: "מהפקולטה",
-  CAMPUS: "מהקמפוס",
-  ONLY_VP: "",
-  NONE: "",
-};
+type Pool = "advisors" | "managers" | "everyone";
 
-const MODES: { mode: BulkMode; label: string; explain: string; people: "advisors" | "managers" | null; verb: (who: string) => string }[] = [
+const MODES: { mode: BulkMode; label: string; explain: string; people: Pool | null; verb: (who: string) => string }[] = [
   {
     mode: "ADVISOR",
-    label: "להקצות יועצת אחראית",
-    explain: "היועצת תקבל את המסלולים לרשימת המכתבים שלה, במקום היועצת הנוכחית.",
+    label: "לקבוע יועצת",
+    explain: "היועצת תקבל את המסלולים לרשימת המכתבים שלה, במקום היועצת הנוכחית (אם יש).",
     people: "advisors",
-    verb: (who) => `להקצות את ${who} כיועצת האחראית`,
+    verb: (who) => `לקבוע את ${who} כיועצת`,
   },
   {
     mode: "MANAGER",
-    label: "לקבוע מנהל רישום למסלולים",
-    explain: "הוא יבדוק את המכתבים של המסלולים האלה, במקום מנהל הרישום של הפקולטה או הקמפוס.",
+    label: "לקבוע מנהל רישום",
+    explain: "הוא יבדוק ויאשר את המכתבים של המסלולים האלה, במקום מנהל הרישום הנוכחי (אם יש).",
     people: "managers",
     verb: (who) => `לקבוע את ${who} כמנהל הרישום`,
   },
   {
-    mode: "MANAGER_DEFAULT",
-    label: "להחזיר את מנהל הרישום של הפקולטה או הקמפוס",
-    explain: "מבטל מנהל רישום שנקבע למסלול, והמסלול חוזר לברירת המחדל של הפקולטה או הקמפוס.",
-    people: null,
-    verb: () => "להחזיר את מנהל הרישום לברירת המחדל",
-  },
-  {
     mode: "ADD_ADVISOR",
     label: "להוסיף יועצת נוספת",
-    explain: "עוד יועצת שמכינה ומתקנת את המכתב, יחד עם היועצת האחראית.",
+    explain: "עוד יועצת שמכינה ומתקנת את המכתב, יחד עם היועצת של המסלול.",
     people: "advisors",
     verb: (who) => `להוסיף את ${who} כיועצת נוספת`,
   },
   {
     mode: "ADD_MANAGER",
-    label: "להוסיף מנהל רישום נוסף",
-    explain: "עוד מנהל רישום שיכול לבדוק ולאשר במקום מנהל הרישום. מספיק שאחד מהם יאשר.",
+    label: "להוסיף מנהל נוסף לסבב הבדיקה",
+    explain: "עוד מנהל רישום שבודק ומאשר יחד עם הראשון. מספיק שאחד מהם יאשר.",
     people: "managers",
-    verb: (who) => `להוסיף את ${who} כמנהל רישום נוסף`,
+    verb: (who) => `להוסיף את ${who} כמנהל נוסף בסבב הבדיקה`,
+  },
+  {
+    mode: "ADD_COMMENTER",
+    label: "להוסיף מעיר (צפייה והערות, בלי אישור)",
+    explain: "האדם יראה את המכתב ויוכל להעיר עליו. שום דבר לא מחכה לו והוא לא מאשר כלום.",
+    people: "everyone",
+    verb: (who) => `להוסיף את ${who} כמעיר (בלי אישור)`,
+  },
+  {
+    mode: "MANAGER_CLEAR",
+    label: "להסיר את מנהל הרישום",
+    explain: "המסלול יישאר בלי מנהל רישום עד שתשבצי מישהו, ולא יהיה אפשר לשלוח אותו לבדיקה.",
+    people: null,
+    verb: () => "להסיר את מנהל הרישום",
   },
   {
     mode: "REMOVE_ADVISOR",
     label: "להסיר יועצת נוספת",
-    explain: "מסיר יועצת שצורפה כנוספת. לא משנה את היועצת האחראית.",
+    explain: "מסיר יועצת שצורפה כנוספת. לא משנה את היועצת של המסלול.",
     people: "advisors",
     verb: (who) => `להסיר את ${who} (יועצת נוספת)`,
   },
   {
     mode: "REMOVE_MANAGER",
-    label: "להסיר מנהל רישום נוסף",
+    label: "להסיר מנהל נוסף",
     explain: "מסיר מנהל רישום שצורף כנוסף. לא משנה את מנהל הרישום של המסלול.",
     people: "managers",
-    verb: (who) => `להסיר את ${who} (מנהל רישום נוסף)`,
+    verb: (who) => `להסיר את ${who} (מנהל נוסף)`,
+  },
+  {
+    mode: "REMOVE_COMMENTER",
+    label: "להסיר מעיר",
+    explain: "האדם לא יראה יותר את המסלולים האלה.",
+    people: "everyone",
+    verb: (who) => `להסיר את ${who} (מעיר)`,
   },
 ];
+
+const POOL_LABEL: Record<Pool, [string, string]> = {
+  advisors: ["יועצת", "בחרו יועצת"],
+  managers: ["מנהל רישום", "בחרו מנהל רישום"],
+  everyone: ["אדם", "בחרו אדם"],
+};
+const EXTRA_LABEL = { ADVISOR: "יועצת נוספת", MANAGER: "מנהל נוסף", COMMENTER: "מעיר (בלי אישור)" } as const;
 
 const norm = (s: string) => s.replace(/["'׳״.\-]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 const tracksWord = (n: number) => (n === 1 ? "מסלול אחד" : `${n} מסלולים`);
 const inTracks = (n: number) => (n === 1 ? "במסלול אחד" : `ב-${n} מסלולים`);
 
 function AdvisorCell({ t }: { t: TrackAssignment }) {
-  return (
-    <span className="flex flex-col items-start gap-1">
-      <span className={t.advisor.ok ? "" : "text-muted line-through"}>{t.advisor.name}</span>
-      {t.missingAdvisor && (
-        <Tag tone="bad" icon={CircleAlert}>
-          חסרה יועצת פעילה
-        </Tag>
-      )}
-    </span>
-  );
+  if (!t.advisor)
+    return (
+      <Tag tone="bad" icon={CircleAlert}>
+        {t.missingAdvisor ? "לא שויכה יועצת" : "יש יועצת נוספת בלבד"}
+      </Tag>
+    );
+  return <span>{t.advisor.name}</span>;
 }
 
 function ManagerCell({ t }: { t: TrackAssignment }) {
-  if (t.managerSource === "ONLY_VP") return <Tag tone="accent">רק הסמנכ&quot;ל בודק</Tag>;
   if (!t.manager)
     return (
       <Tag tone="bad" icon={CircleAlert}>
-        אין מנהל רישום
+        {t.missingManager ? "לא שויך מנהל רישום" : "יש מנהל נוסף בלבד"}
       </Tag>
     );
-  return (
-    <span className="flex flex-col items-start">
-      <span>{t.manager.name}</span>
-      <span className={`text-xs ${t.managerSource === "TRACK" ? "font-semibold text-accent" : "text-muted"}`}>{SOURCE[t.managerSource]}</span>
-    </span>
-  );
+  return <span>{t.manager.name}</span>;
 }
 
 function Extras({ t, remove }: { t: TrackAssignment; remove: (t: TrackAssignment, e: TrackAssignment["extras"][number]) => void }) {
@@ -112,7 +118,7 @@ function Extras({ t, remove }: { t: TrackAssignment; remove: (t: TrackAssignment
       {t.extras.map((e) => (
         <li key={`${e.kind}:${e.id}`} className="inline-flex items-center gap-0.5 rounded-full bg-bg py-0.5 ps-2.5 pe-0.5 text-xs ring-1 ring-line ring-inset">
           <span>
-            {e.name} · {e.kind === "ADVISOR" ? "יועצת" : "מנהל רישום"}
+            {e.name} · {EXTRA_LABEL[e.kind]}
           </span>
           <button
             type="button"
@@ -136,12 +142,14 @@ export function TracksBoard({
   tracks,
   advisors,
   managers,
+  everyone,
   bulkAction,
   removeAction,
 }: {
   tracks: TrackAssignment[];
   advisors: PersonRef[];
   managers: PersonRef[];
+  everyone: PersonRef[];
   bulkAction: (prev: BulkState, form: FormData) => Promise<BulkState>;
   removeAction: (prev: ActionResult, form: FormData) => Promise<ActionResult>;
 }) {
@@ -181,7 +189,7 @@ export function TracksBoard({
   const canAssignAdvisor = tracks.some((t) => t.canChangeAdvisor);
 
   const current = MODES.find((m) => m.mode === mode)!;
-  const people = current.people === "advisors" ? advisors : current.people === "managers" ? managers : [];
+  const people = current.people === "advisors" ? advisors : current.people === "managers" ? managers : current.people === "everyone" ? everyone : [];
   const person = people.find((p) => p.id === userId);
   const ready = selected.size > 0 && (current.people === null || Boolean(person));
 
@@ -229,21 +237,25 @@ export function TracksBoard({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* What is missing, at a glance. */}
+      {/* What is missing, at a glance: the red tags filter the table to just those tracks. */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-semibold">
           <span className="tabular">{tracks.length}</span> מסלולים בעונה
         </span>
-        {missingManager > 0 ? (
-          <Tag tone="bad" icon={CircleAlert}>
-            {tracksWord(missingManager)} בלי מנהל רישום
-          </Tag>
-        ) : null}
-        {missingAdvisor > 0 ? (
-          <Tag tone="bad" icon={CircleAlert}>
-            {tracksWord(missingAdvisor)} בלי יועצת פעילה
-          </Tag>
-        ) : null}
+        {missingAdvisor > 0 && (
+          <button type="button" onClick={() => setOnlyMissing(true)} className="cursor-pointer rounded-full">
+            <Tag tone="bad" icon={CircleAlert}>
+              {tracksWord(missingAdvisor)} בלי יועצת
+            </Tag>
+          </button>
+        )}
+        {missingManager > 0 && (
+          <button type="button" onClick={() => setOnlyMissing(true)} className="cursor-pointer rounded-full">
+            <Tag tone="bad" icon={CircleAlert}>
+              {tracksWord(missingManager)} בלי מנהל רישום
+            </Tag>
+          </button>
+        )}
         {missingManager === 0 && missingAdvisor === 0 && (
           <Tag tone="good" icon={CircleCheck}>
             לכל המסלולים יש יועצת ומנהל רישום
@@ -482,9 +494,9 @@ export function TracksBoard({
                 </label>
                 {current.people && (
                   <label className="flex flex-col gap-1.5">
-                    <span className={labelClass}>{current.people === "advisors" ? "יועצת" : "מנהל רישום"}</span>
+                    <span className={labelClass}>{POOL_LABEL[current.people][0]}</span>
                     <select value={userId} onChange={(e) => setUserId(e.target.value)} className={input}>
-                      <option value="">{current.people === "advisors" ? "בחרו יועצת" : "בחרו מנהל רישום"}</option>
+                      <option value="">{POOL_LABEL[current.people][1]}</option>
                       {people.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
@@ -501,7 +513,7 @@ export function TracksBoard({
               <p className="text-sm text-muted">{current.explain}</p>
               {people.length === 0 && current.people && (
                 <p className="text-sm text-bad">
-                  אין עדיין {current.people === "advisors" ? "יועצות בקרה" : "מנהלי רישום"} במערכת. מוסיפים אותם בלשונית &quot;אנשים&quot;.
+                  אין עדיין {current.people === "advisors" ? "יועצות בקרה" : current.people === "managers" ? "מנהלי רישום" : "אנשים"} במערכת. מוסיפים אותם בלשונית &quot;אנשים&quot;.
                 </p>
               )}
             </>
@@ -543,7 +555,7 @@ export function TracksBoard({
       <ConfirmDialog
         open={asking}
         message={`${current.verb(person?.name ?? "")} ${inTracks(selected.size)}?${
-          person && (mode === "ADVISOR" || mode.startsWith("ADD"))
+          person && (mode === "ADVISOR" || mode === "MANAGER" || mode.startsWith("ADD"))
             ? ` ${selected.size === 1 ? "המסלול יופיע" : "המסלולים יופיעו"} ברשימה של ${person.name}.`
             : ""
         }`}

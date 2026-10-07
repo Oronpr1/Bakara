@@ -63,10 +63,8 @@ export default async function TracksSettingsPage({ searchParams }: { searchParam
           <span>
             <b>העונה {current.name} נפתחה, והמערכת עברה אליה.</b>{" "}
             {source
-              ? `הועתקו ${board.tracks.length} מתוך ${source.letterCount} המסלולים של ${source.name}${
-                  board.tracks.length < source.letterCount ? " (מסלול בלי יועצת פעילה לא הועתק: אפשר להקים אותו כאן)" : ""
-                }. עכשיו בודקים שלכל מסלול יש יועצת ומנהל רישום.`
-              : "עכשיו מקימים מסלולים: אחד אחד או מקובץ."}
+              ? `הועתקו ${board.tracks.length} מתוך ${source.letterCount} המסלולים של ${source.name}, עם היועצת, מנהל הרישום והאנשים הנוספים של כל מסלול (מי שעדיין פעיל). עכשיו בודקים מי עוד חסר.`
+              : "עכשיו מקימים מסלולים: אחד אחד או מקובץ, ואחר כך משבצים בהם יועצת ומנהל רישום."}
           </span>
         </p>
       )}
@@ -86,6 +84,7 @@ export default async function TracksSettingsPage({ searchParams }: { searchParam
                 campuses={board.campuses}
                 faculties={board.faculties}
                 advisors={board.advisors}
+                managers={board.managers}
               />
             </div>
           </details>
@@ -129,14 +128,15 @@ export default async function TracksSettingsPage({ searchParams }: { searchParam
               מי אחראי על כל מסלול
             </h3>
             <p className="text-sm text-muted">
-              בוחרים מסלולים (למשל מחפשים &quot;MBA&quot; ובוחרים את כולם) ומקצים להם יועצת, מנהל רישום או אנשים נוספים בבת אחת. מנהל הרישום מגיע מהפקולטה,
-              ואם אין לה, מהקמפוס; מנהל רישום שנקבע למסלול גובר על שניהם.
+              כל מסלול משובץ בנפרד: יועצת, מנהל רישום, ועוד אנשים לפי שיקול דעתך. בוחרים כמה מסלולים בבת אחת (למשל מחפשים &quot;MBA&quot; ובוחרים את כולם)
+              כדי לשבץ אותם יחד. רק יועצת ומנהל רישום, הסמנכ&quot;ל והגורם האקדמי מאשרים. &quot;מעיר&quot; רק רואה ומעיר, ושום דבר לא מחכה לו.
             </p>
           </div>
           <TracksBoard
             tracks={board.tracks}
             advisors={board.advisors}
             managers={board.managers}
+            everyone={board.everyone}
             bulkAction={bulkAssignAction}
             removeAction={removeExtraAction}
           />

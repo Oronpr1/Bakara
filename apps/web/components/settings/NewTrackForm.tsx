@@ -4,19 +4,21 @@ import { Field, SelectField } from "@/components/Field";
 import type { ActionResult } from "@/lib/action-result";
 import type { PersonRef } from "@/lib/settings/queries";
 
-/** "דרישת מכתב" for one track: name, code, campus and faculty (suggested from the ones that exist). */
+/** "דרישת מכתב" for one track: name, code, campus and faculty (suggested from the ones that exist), and who is assigned. */
 export function NewTrackForm({
   action,
   seasonId,
   campuses,
   faculties,
   advisors,
+  managers,
 }: {
   action: (prev: ActionResult, form: FormData) => Promise<ActionResult>;
   seasonId: string;
   campuses: string[];
   faculties: string[];
   advisors: PersonRef[];
+  managers: PersonRef[];
 }) {
   return (
     <ActionForm
@@ -45,8 +47,14 @@ export function NewTrackForm({
         <SelectField
           label="יועצת בקרה"
           name="advisorId"
-          placeholder="לפי הקמפוס והפקולטה (ברירת המחדל)"
+          placeholder="אשבץ אחר כך"
           options={advisors.map((a) => ({ value: a.id, label: a.name }))}
+        />
+        <SelectField
+          label="מנהל רישום"
+          name="registrationManagerId"
+          placeholder="אשבץ אחר כך"
+          options={managers.map((m) => ({ value: m.id, label: m.name }))}
         />
         <Field label="תאריך יעד למסלול" name="dueDate" type="date" hint="לא חובה. בלי תאריך: תאריך היעד של העונה." />
       </div>
@@ -61,8 +69,7 @@ export function NewTrackForm({
         ))}
       </datalist>
       <p className="text-sm text-muted">
-        מנהל הרישום נקבע לפי הקמפוס והפקולטה (בלשונית &quot;קמפוסים ופקולטות&quot;), ואפשר לקבוע אחר למסלול בטבלה למטה. היועצת מקבלת את המסלול לרשימת
-        המכתבים שלה.
+        אפשר לשבץ עכשיו או אחר כך בטבלה למטה, ושם גם להוסיף עוד אנשים. המסלול לא יישלח לבדיקה לפני שיש בו יועצת ומנהל רישום.
       </p>
     </ActionForm>
   );
