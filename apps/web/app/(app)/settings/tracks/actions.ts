@@ -11,7 +11,7 @@ import { importTracks, planTrackImport, readTrackFile, type ImportReport } from 
 import { createLetterRequest, removeLetterPerson } from "@/lib/letters/service";
 import { BULK_MODES, bulkAssign } from "@/lib/settings/assign";
 
-const PATHS = ["/settings/tracks", "/settings/units", "/settings/people", "/"];
+const PATHS = ["/settings/tracks", "/settings/people", "/"];
 const revalidateAll = () => PATHS.forEach((p) => revalidatePath(p));
 
 const text = (what: string) =>

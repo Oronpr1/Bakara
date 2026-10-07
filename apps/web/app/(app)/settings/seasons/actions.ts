@@ -21,7 +21,7 @@ const settings = {
   controlReview: z.literal("on").optional(),
   dueDate: z.iso.date({ message: "תאריך היעד לא תקין" }).optional(),
 };
-const PATHS = ["/settings/seasons", "/settings/tracks", "/settings/units", "/settings/people", "/"];
+const PATHS = ["/settings/seasons", "/settings/tracks", "/settings/people", "/"];
 
 /** Opens a season, moves the whole system to it, and continues to its tracks. */
 export async function createSeasonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
