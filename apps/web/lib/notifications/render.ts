@@ -21,6 +21,7 @@ const LINES: Record<NotificationType, (d: Record<string, unknown>) => string> = 
   COMMENT_STATUS: () => "עודכן הסטטוס של הערה שכתבת",
   ACTED_FOR_YOU: (d) => `${typeof d.by === "string" ? d.by : "ורוניקה"} פעלה במקומך`,
   LINK_REQUEST: () => "גורם אקדמי ביקש קישור חדש למכתב",
+  ADDED_TO_LETTER: () => "צירפו אותך לצפייה ולהערות על מכתב",
   REMINDER: (d) => `תזכורת: המכתב ממתין לך${typeof d.days === "number" ? ` כבר ${d.days} ימים` : ""}`,
 };
 

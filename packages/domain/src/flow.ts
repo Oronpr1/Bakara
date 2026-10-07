@@ -41,13 +41,14 @@ export interface FlowSettings {
 export const DEFAULT_SETTINGS: FlowSettings = { sequential: true, controlReview: false };
 
 export interface FlowPeople {
-  advisorId: string;
+  /** The track's advisor; null until the control manager assigns one. */
+  advisorId: string | null;
   /** More advisors added to this track by the control manager; they prepare and fix like the main one. */
   extraAdvisorIds: readonly string[];
-  /** Who is the registration manager for this letter right now (empty = nobody set). */
+  /** The registration managers of this letter (empty = nobody assigned yet); any one of them may decide. */
   rmIds: readonly string[];
-  /** "In this unit only the VP reviews": no registration manager is needed. */
-  onlyVp: boolean;
+  /** People the control manager attached to look and comment: nothing waits for them and they approve nothing. */
+  commenterIds: readonly string[];
   vpIds: readonly string[];
   controlIds: readonly string[];
 }
@@ -107,7 +108,7 @@ export type FlowState =
 
 export type HolderKind = "ADVISOR" | "REVIEWERS" | "ACADEMIC" | "SIGNER" | "NONE";
 
-export type Blocker = "NO_VERSION" | "NO_REGISTRATION_MANAGER" | "NO_VP" | "OPEN_COMMENTS";
+export type Blocker = "NO_VERSION" | "NO_ADVISOR" | "NO_REGISTRATION_MANAGER" | "NO_VP" | "OPEN_COMMENTS";
 
 export interface FlowView {
   phase: Phase;
@@ -127,6 +128,7 @@ export class FlowError extends Error {
     public readonly code:
       | "INVALID_PHASE"
       | "NO_VERSION"
+      | "NO_ADVISOR"
       | "NO_REGISTRATION_MANAGER"
       | "NO_VP"
       | "OPEN_COMMENTS"
@@ -162,8 +164,8 @@ export function seatsOf(input: FlowInput): Seat[] {
   const keys: { key: SeatKey; holders: readonly string[]; auto?: boolean }[] = [];
   if (phase === "REVIEW") {
     if (settings.controlReview) keys.push({ key: "CONTROL", holders: people.controlIds });
-    if (!people.onlyVp && people.rmIds.length > 0) {
-      keys.push({ key: "RM", holders: people.rmIds, auto: people.rmIds.includes(people.advisorId) });
+    if (people.rmIds.length > 0) {
+      keys.push({ key: "RM", holders: people.rmIds, auto: people.advisorId !== null && people.rmIds.includes(people.advisorId) });
     }
     keys.push({ key: "VP", holders: people.vpIds });
   } else if (phase === "ACADEMIC") {
@@ -194,7 +196,7 @@ export function seatsOf(input: FlowInput): Seat[] {
 /** Everything the screens and the rules need to know about where the letter stands. */
 export function flowView(input: FlowInput): FlowView {
   const { phase, people } = input;
-  const advisor = { kind: "ADVISOR" as const, userIds: [people.advisorId, ...people.extraAdvisorIds] };
+  const advisor = { kind: "ADVISOR" as const, userIds: [...(people.advisorId ? [people.advisorId] : []), ...people.extraAdvisorIds] };
   const none = { kind: "NONE" as const, userIds: [] as string[] };
   const seats = seatsOf(input);
   const returned = seats.some((s) => s.status === "returned");
@@ -202,10 +204,11 @@ export function flowView(input: FlowInput): FlowView {
 
   if (phase === "DRAFT") {
     const blockers: Blocker[] = [];
+    if (advisor.userIds.length === 0) blockers.push("NO_ADVISOR");
     if (input.latestVersion < 1) blockers.push("NO_VERSION");
-    if (!people.onlyVp && people.rmIds.length === 0) blockers.push("NO_REGISTRATION_MANAGER");
+    if (people.rmIds.length === 0) blockers.push("NO_REGISTRATION_MANAGER");
     if (people.vpIds.length === 0) blockers.push("NO_VP");
-    const stuck = blockers.includes("NO_REGISTRATION_MANAGER") || blockers.includes("NO_VP");
+    const stuck = blockers.includes("NO_ADVISOR") || blockers.includes("NO_REGISTRATION_MANAGER") || blockers.includes("NO_VP");
     return { ...base, state: stuck ? "BLOCKED" : "PREPARING", holder: advisor, fixing: false, blockers };
   }
 
@@ -295,9 +298,10 @@ export interface SubmitResult {
 export function submit(input: FlowInput): SubmitResult {
   if (input.phase !== "DRAFT") throw new FlowError("INVALID_PHASE", "המכתב כבר נשלח לבדיקה");
   const view = flowView(input);
+  if (view.blockers.includes("NO_ADVISOR")) throw new FlowError("NO_ADVISOR", "עוד לא שויכה יועצת למסלול. אפשר לפנות לוורוניקה");
   if (view.blockers.includes("NO_VERSION")) throw new FlowError("NO_VERSION", "צריך להעלות גרסה לפני השליחה");
   if (view.blockers.includes("NO_REGISTRATION_MANAGER"))
-    throw new FlowError("NO_REGISTRATION_MANAGER", "לא הוגדר מנהל רישום ליחידה. אפשר לפנות לוורוניקה");
+    throw new FlowError("NO_REGISTRATION_MANAGER", "עוד לא שויך מנהל רישום למסלול. אפשר לפנות לוורוניקה");
   if (view.blockers.includes("NO_VP")) throw new FlowError("NO_VP", 'לא הוגדר סמנכ"ל רישום במערכת. אפשר לפנות לוורוניקה');
   return { toPhase: "REVIEW" };
 }

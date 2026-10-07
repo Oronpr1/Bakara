@@ -3,7 +3,7 @@ import type { Decision, FlowInput, FlowSettings } from "@al/domain";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { notFound } from "../errors";
 
-const { letterRequests, seasons, units, campuses, users, letterAcademics, letterPeople, reviews, comments } = schema;
+const { letterRequests, seasons, users, letterAcademics, letterPeople, reviews, comments } = schema;
 
 /** A transaction or the database; both expose the same query API. */
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
@@ -54,8 +54,6 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
   const seasonIds = [...new Set(rows.map((r) => r.seasonId))];
   // One after another: a transaction has a single connection, and pg warns about overlapping queries on it.
   const seasonRows = await tx.select().from(seasons).where(inArray(seasons.id, seasonIds));
-  const unitRows = await tx.select().from(units);
-  const campusRows = await tx.select().from(campuses);
   const system = await systemPeople(tx);
   const academicRows = await tx.select().from(letterAcademics).where(and(inArray(letterAcademics.letterId, ids), isNull(letterAcademics.removedAt)));
   const extraRows = await tx.select().from(letterPeople).where(inArray(letterPeople.letterId, ids));
@@ -67,15 +65,11 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
     .groupBy(comments.letterId);
 
   const seasonOf = new Map(seasonRows.map((s) => [s.id, s]));
-  const unitOf = new Map(unitRows.map((u) => [`${u.campus}\u0000${u.faculty}`, u]));
-  const campusOf = new Map(campusRows.map((c) => [c.name, c]));
   const openOf = new Map(commentRows.map((c) => [c.letterId, c.n]));
 
   return rows.map((row) => {
     const season = seasonOf.get(row.seasonId)!;
-    const unit = unitOf.get(`${row.campus}\u0000${row.faculty}`);
-    const campus = campusOf.get(row.campus);
-    const rm = row.registrationManagerId ?? unit?.registrationManagerId ?? campus?.registrationManagerId ?? null;
+    const rm = row.registrationManagerId;
     const decisions: Decision[] = reviewRows
       .filter((r) => r.letterId === row.id)
       .map((r) => ({
@@ -96,7 +90,7 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
         advisorId: row.advisorId,
         extraAdvisorIds: extra.filter((e) => e.kind === "ADVISOR").map((e) => e.userId),
         rmIds: [...(rm ? [rm] : []), ...extra.filter((e) => e.kind === "MANAGER").map((e) => e.userId)],
-        onlyVp: Boolean(unit?.onlyVp || (campus?.onlyVp && !unit?.registrationManagerId)) && !row.registrationManagerId,
+        commenterIds: extra.filter((e) => e.kind === "COMMENTER").map((e) => e.userId),
         vpIds: system.vpIds,
         controlIds: system.controlIds,
       },

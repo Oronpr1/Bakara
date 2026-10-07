@@ -39,7 +39,7 @@ function letter(over: Partial<FlowInput> = {}): FlowInput {
     phase: "REVIEW",
     latestVersion: 1,
     settings: { sequential: true, controlReview: false },
-    people: { advisorId: "shaked", extraAdvisorIds: [], rmIds: ["oron"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] },
+    people: { advisorId: "shaked", extraAdvisorIds: [], rmIds: ["oron"], commenterIds: [], vpIds: ["yossi"], controlIds: ["ver"] },
     academics: [],
     decisions: [],
     openComments: 0,
@@ -219,14 +219,30 @@ describe("final approval", () => {
 });
 
 describe("people and edge cases", () => {
-  it("a unit with no registration manager is stuck, unless only the VP reviews there", () => {
-    const stuck = letter({ phase: "DRAFT", people: { ...letter().people, rmIds: [] } });
-    expect(flowView(stuck).state).toBe("BLOCKED");
-    expect(() => submit(stuck)).toThrow(/מנהל רישום/);
-    const vpOnly = letter({ phase: "DRAFT", people: { ...letter().people, rmIds: [], onlyVp: true } });
-    expect(flowView(vpOnly).state).toBe("PREPARING");
-    const inReview = flowView({ ...vpOnly, phase: "REVIEW" });
-    expect(inReview.seats.map((s) => s.key)).toEqual(["VP"]);
+  it("a track with no registration manager, or no advisor, is stuck and cannot be sent", () => {
+    const noManager = letter({ phase: "DRAFT", people: { ...letter().people, rmIds: [] } });
+    expect(flowView(noManager).state).toBe("BLOCKED");
+    expect(flowView(noManager).blockers).toContain("NO_REGISTRATION_MANAGER");
+    expect(() => submit(noManager)).toThrow(/מנהל רישום/);
+    const noAdvisor = letter({ phase: "DRAFT", people: { ...letter().people, advisorId: null } });
+    expect(flowView(noAdvisor).state).toBe("BLOCKED");
+    expect(flowView(noAdvisor).blockers).toContain("NO_ADVISOR");
+    expect(flowView(noAdvisor).holder.userIds).toEqual([]);
+    expect(() => submit(noAdvisor)).toThrow(/יועצת/);
+  });
+
+  it("a commenter attached to the track may look and comment, but holds no seat and approves nothing", () => {
+    const withCommenter = letter({ phase: "REVIEW", people: { ...letter().people, commenterIds: ["dean"] } });
+    const dean = { userId: "dean", roles: [] as never[] };
+    const a = abilities(dean, withCommenter);
+    expect(a.view).toBe(true);
+    expect(a.comment).toBe(true);
+    expect(a.reply).toBe(true);
+    expect(a.decide).toEqual([]);
+    expect(a.submit).toBe(false);
+    expect(flowView(withCommenter).seats.flatMap((s) => s.holderIds)).not.toContain("dean");
+    // Somebody who is not on the track still cannot see it.
+    expect(abilities({ userId: "other", roles: [] as never[] }, withCommenter).view).toBe(false);
   });
 
   it("no VP in the system blocks sending", () => {
@@ -234,7 +250,7 @@ describe("people and edge cases", () => {
   });
 
   it("an advisor who is also the registration manager is approved by submitting; the VP stays required", () => {
-    const shuli = letter({ people: { advisorId: "shuli", extraAdvisorIds: [], rmIds: ["shuli"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] } });
+    const shuli = letter({ people: { advisorId: "shuli", extraAdvisorIds: [], rmIds: ["shuli"], commenterIds: [], vpIds: ["yossi"], controlIds: ["ver"] } });
     const v = flowView(shuli);
     expect(v.seats[0]).toMatchObject({ key: "RM", status: "approved", auto: true });
     expect(v.holder.userIds).toEqual(["yossi"]);

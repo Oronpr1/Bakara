@@ -7,10 +7,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { listUsers, type UserOption } from "../letters/queries";
 import { loadLetters } from "../letters/state";
 
-const { letterRequests, units, campuses, seasons } = schema;
-
-/** Where the registration manager of a track comes from. */
-export type ManagerSource = "TRACK" | "FACULTY" | "CAMPUS" | "ONLY_VP" | "NONE";
+const { letterRequests, seasons } = schema;
 
 export interface PersonRef {
   id: string;
@@ -25,11 +22,13 @@ export interface TrackAssignment {
   trackNumber: string;
   phase: Phase;
   state: FlowState;
-  advisor: PersonRef & { /** Still an active advisor (else she must be replaced). */ ok: boolean };
-  /** The registration manager who reviews this track, when there is one. */
+  /** The track's own advisor; null until assigned (or when she is no longer an active advisor). */
+  advisor: PersonRef | null;
+  /** The track's registration manager; null until assigned. */
   manager: PersonRef | null;
-  managerSource: ManagerSource;
-  extras: (PersonRef & { kind: "ADVISOR" | "MANAGER" })[];
+  /** More advisors and managers, and the commenters attached to the track. */
+  extras: (PersonRef & { kind: "ADVISOR" | "MANAGER" | "COMMENTER" })[];
+  /** Nobody can prepare the letter: it cannot move until an advisor is assigned. */
   missingAdvisor: boolean;
   /** Nobody can review in the registration manager's place: the letter cannot be sent to review. */
   missingManager: boolean;
@@ -41,6 +40,8 @@ export interface TrackBoard {
   tracks: TrackAssignment[];
   advisors: PersonRef[];
   managers: PersonRef[];
+  /** Every active person, for attaching a commenter. */
+  everyone: PersonRef[];
   campuses: string[];
   faculties: string[];
 }
@@ -50,40 +51,27 @@ const holds = (u: UserOption | undefined, role: Role) => Boolean(u?.active && u.
 
 /** Every track of the season with its people, in campus / faculty / name order. */
 export async function getTrackBoard(actor: Actor, seasonId: string, db: Db = getDb()): Promise<TrackBoard> {
-  const [rows, people, unitRows, campusRows] = await Promise.all([
+  const [rows, people, known] = await Promise.all([
     db
       .select()
       .from(letterRequests)
       .where(eq(letterRequests.seasonId, seasonId))
       .orderBy(asc(letterRequests.campus), asc(letterRequests.faculty), asc(letterRequests.trackName)),
     listUsers(db),
-    db.select().from(units),
-    db.select().from(campuses).orderBy(asc(campuses.name)),
+    // Campuses and faculties are whatever the tracks of any season say; there is no separate list to keep.
+    db.selectDistinct({ campus: letterRequests.campus, faculty: letterRequests.faculty }).from(letterRequests),
   ]);
   const loaded = await loadLetters(db, rows);
   const byId = new Map(people.map((u) => [u.id, u]));
-  const unitOf = new Map(unitRows.map((u) => [`${u.campus}\u0000${u.faculty}`, u]));
-  const campusOf = new Map(campusRows.map((c) => [c.name, c]));
 
   const tracks = loaded.map(({ row, input }): TrackAssignment => {
-    const unit = unitOf.get(`${row.campus}\u0000${row.faculty}`);
-    const campus = campusOf.get(row.campus);
-    // The same order the letter loader uses: the track's own, else the faculty's, else the campus's.
-    const mainId = row.registrationManagerId ?? unit?.registrationManagerId ?? campus?.registrationManagerId ?? null;
-    const source: ManagerSource = input.people.onlyVp
-      ? "ONLY_VP"
-      : row.registrationManagerId
-        ? "TRACK"
-        : unit?.registrationManagerId
-          ? "FACULTY"
-          : campus?.registrationManagerId
-            ? "CAMPUS"
-            : "NONE";
+    const mainManager = row.registrationManagerId;
     const extras = [
       ...input.people.extraAdvisorIds.map((id) => ({ ...ref(byId, id), kind: "ADVISOR" as const })),
-      ...input.people.rmIds.slice(mainId ? 1 : 0).map((id) => ({ ...ref(byId, id), kind: "MANAGER" as const })),
+      ...input.people.rmIds.filter((id) => id !== mainManager).map((id) => ({ ...ref(byId, id), kind: "MANAGER" as const })),
+      ...input.people.commenterIds.map((id) => ({ ...ref(byId, id), kind: "COMMENTER" as const })),
     ];
-    const advisorOk = holds(byId.get(row.advisorId), "CONTROL_ADVISOR");
+    const advisorOk = row.advisorId !== null && holds(byId.get(row.advisorId), "CONTROL_ADVISOR");
     const view = flowView(input);
     // Whether it could be sent to review, asked of the core as if it were a draft.
     const asDraft = flowView({ ...input, phase: "DRAFT" });
@@ -95,9 +83,8 @@ export async function getTrackBoard(actor: Actor, seasonId: string, db: Db = get
       trackNumber: row.trackNumber,
       phase: view.phase,
       state: view.state,
-      advisor: { ...ref(byId, row.advisorId), ok: advisorOk },
-      manager: mainId && source !== "ONLY_VP" ? ref(byId, mainId) : null,
-      managerSource: source,
+      advisor: advisorOk && row.advisorId ? ref(byId, row.advisorId) : null,
+      manager: mainManager ? ref(byId, mainManager) : null,
       extras,
       missingAdvisor: !advisorOk && !input.people.extraAdvisorIds.some((id) => holds(byId.get(id), "CONTROL_ADVISOR")),
       missingManager: asDraft.blockers.includes("NO_REGISTRATION_MANAGER"),
@@ -106,12 +93,14 @@ export async function getTrackBoard(actor: Actor, seasonId: string, db: Db = get
   });
 
   const opt = (role: Role) => people.filter((u) => holds(u, role)).map((u) => ({ id: u.id, name: u.name }));
+  const sorted = (xs: Iterable<string>) => [...new Set(xs)].sort((a, b) => a.localeCompare(b, "he"));
   return {
     tracks,
     advisors: opt("CONTROL_ADVISOR"),
     managers: opt("REGISTRATION_MANAGER"),
-    campuses: [...new Set([...campusRows.map((c) => c.name), ...rows.map((r) => r.campus)])].sort((a, b) => a.localeCompare(b, "he")),
-    faculties: [...new Set([...unitRows.map((u) => u.faculty), ...rows.map((r) => r.faculty)])].sort((a, b) => a.localeCompare(b, "he")),
+    everyone: people.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name })),
+    campuses: sorted(known.map((k) => k.campus)),
+    faculties: sorted(known.map((k) => k.faculty)),
   };
 }
 
@@ -126,7 +115,7 @@ export function loadPerPerson(tracks: TrackAssignment[]): Map<string, PersonLoad
   const out = new Map<string, PersonLoad>();
   const at = (id: string) => out.get(id) ?? (out.set(id, { advisor: 0, manager: 0, extra: 0 }), out.get(id)!);
   for (const t of tracks) {
-    at(t.advisor.id).advisor++;
+    if (t.advisor) at(t.advisor.id).advisor++;
     if (t.manager) at(t.manager.id).manager++;
     for (const e of t.extras) at(e.id).extra++;
   }

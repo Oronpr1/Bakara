@@ -78,7 +78,8 @@ export interface LetterSummary {
   faculty: string;
   trackName: string;
   trackNumber: string;
-  advisorId: string;
+  /** Null until the control manager assigns an advisor to the track. */
+  advisorId: string | null;
   advisorName: string;
   phase: Phase;
   state: FlowState;
@@ -120,7 +121,7 @@ export function toSummary(l: LoadedLetter, actor: Actor, names: Map<string, stri
     trackName: l.row.trackName,
     trackNumber: l.row.trackNumber,
     advisorId: l.row.advisorId,
-    advisorName: names.get(l.row.advisorId) ?? "—",
+    advisorName: l.row.advisorId ? (names.get(l.row.advisorId) ?? "—") : "לא שויכה יועצת",
     phase: view.phase,
     state: view.state,
     holderKind: view.holder.kind,
@@ -187,7 +188,7 @@ export interface Tower {
   /** Who holds how many letters, longest wait first. */
   holders: HolderLine[];
   /** Draft letters with no version yet, per advisor: "didn't start". */
-  notStarted: { advisorId: string; name: string; count: number }[];
+  notStarted: { advisorId: string | null; name: string; count: number }[];
   /** Letters that cannot move: nobody set to review. */
   blocked: LetterSummary[];
   overdue: number;
@@ -197,13 +198,14 @@ export interface Tower {
 export function buildTower(items: LetterSummary[]): Tower {
   const byPhase = Object.fromEntries(PHASES.map((p) => [p, 0])) as Record<Phase, number>;
   const holders = new Map<string, HolderLine>();
-  const notStarted = new Map<string, { advisorId: string; name: string; count: number }>();
+  const notStarted = new Map<string, { advisorId: string | null; name: string; count: number }>();
   for (const l of items) {
     byPhase[l.phase]++;
     if (l.phase === "DRAFT" && l.latestVersion === 0) {
-      const s = notStarted.get(l.advisorId) ?? { advisorId: l.advisorId, name: l.advisorName, count: 0 };
+      const key = l.advisorId ?? "none";
+      const s = notStarted.get(key) ?? { advisorId: l.advisorId, name: l.advisorName, count: 0 };
       s.count++;
-      notStarted.set(l.advisorId, s);
+      notStarted.set(key, s);
     }
     if (l.holderKind === "NONE" || l.waitingDays === null) continue;
     l.holderIds.forEach((id, i) => {
@@ -329,9 +331,9 @@ export interface LetterRoom {
   /** For reassigning the advisor (only when the actor may). */
   advisors: { id: string; name: string }[];
   /** More people the control manager added to this track. */
-  extraPeople: { userId: string; name: string; kind: "ADVISOR" | "MANAGER" }[];
+  extraPeople: { userId: string; name: string; kind: "ADVISOR" | "MANAGER" | "COMMENTER" }[];
   /** Everyone who can be added to a track (only when the actor may manage people). */
-  addable: { advisors: { id: string; name: string }[]; managers: { id: string; name: string }[] };
+  addable: { advisors: { id: string; name: string }[]; managers: { id: string; name: string }[]; commenters: { id: string; name: string }[] };
   /** Who the registration manager(s) of this letter are right now. */
   managerNames: string[];
   /** Last season's approved file for this track: the starting point for this year's letter. */
@@ -469,8 +471,9 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
       ? {
           advisors: usersWithRole(people, "CONTROL_ADVISOR").map((u) => ({ id: u.id, name: u.name })),
           managers: usersWithRole(people, "REGISTRATION_MANAGER").map((u) => ({ id: u.id, name: u.name })),
+          commenters: people.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name })),
         }
-      : { advisors: [], managers: [] },
+      : { advisors: [], managers: [], commenters: [] },
     managerNames: l.input.people.rmIds.map((id) => nameOf(id) ?? "—"),
     starter: starterRows[0] ? { versionId: starterRows[0].id, number: starterRows[0].number, seasonName: starterRows[0].seasonName } : null,
     noNewVersionSinceReturn: Boolean(lastReturn && lastReturn.versionNumber >= l.row.latestVersion && can.flow.fixing),

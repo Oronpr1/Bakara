@@ -45,7 +45,7 @@ export async function letterExtras(actor: Actor, letterIds: string[], db: Db = g
     const final = can.decide.find((s) => s.seat === "FINAL");
     out.set(l.row.id, {
       rmIds: [...l.input.people.rmIds],
-      advisorIds: [l.input.people.advisorId, ...l.input.people.extraAdvisorIds],
+      advisorIds: [l.input.people.advisorId, ...l.input.people.extraAdvisorIds].filter((id): id is string => Boolean(id)),
       canRemind: can.remind,
       canFinal: Boolean(final),
       finalOnBehalfOf: final?.onBehalfOf ?? null,
@@ -68,7 +68,7 @@ export async function getHomeView(actor: Actor, seasonId: string, db: Db = getDb
       ...l,
       rmIds,
       rmNames: rmIds.map((id) => names.get(id) ?? "—"),
-      advisorIds: x?.advisorIds ?? [l.advisorId],
+      advisorIds: x?.advisorIds ?? (l.advisorId ? [l.advisorId] : []),
       canRemind: x?.canRemind ?? false,
       canFinal: x?.canFinal ?? false,
       finalOnBehalfOf: x?.finalOnBehalfOf ? (names.get(x.finalOnBehalfOf) ?? null) : null,

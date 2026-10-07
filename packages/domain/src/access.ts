@@ -68,10 +68,12 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
   const advisor = actor.userId === people.advisorId || people.extraAdvisorIds.includes(actor.userId);
   const rm = people.rmIds.includes(actor.userId);
   const academic = input.academics.includes(actor.userId);
+  // Attached by the control manager to look and comment; holds no seat and approves nothing.
+  const commenter = people.commenterIds.includes(actor.userId);
   const inWorkspace = advisor || rm || actsFor || vp;
   const seeAll = allowed(actor, "VIEW_ALL");
 
-  const canSee = seeAll || advisor || rm || academic;
+  const canSee = seeAll || advisor || rm || academic || commenter;
   const commentPhase: Phase[] = ["REVIEW", "ACADEMIC", "FINAL"];
   // The advisor holds the letter in DRAFT and while fixing; the control manager can always upload.
   const advisorTurn = advisor && (phase === "DRAFT" || view.holder.kind === "ADVISOR") && phase !== "APPROVED";

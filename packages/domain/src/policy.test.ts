@@ -10,7 +10,7 @@ const letter = (over: Partial<FlowInput> = {}): FlowInput => ({
   phase: "ACADEMIC",
   latestVersion: 1,
   settings: { sequential: true, controlReview: false },
-  people: { advisorId: "shaked", extraAdvisorIds: [], rmIds: ["oron"], onlyVp: false, vpIds: ["yossi"], controlIds: ["ver"] },
+  people: { advisorId: "shaked", extraAdvisorIds: [], rmIds: ["oron"], commenterIds: [], vpIds: ["yossi"], controlIds: ["ver"] },
   academics: [],
   decisions: [],
   openComments: 0,

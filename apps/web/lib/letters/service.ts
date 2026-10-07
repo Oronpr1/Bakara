@@ -19,7 +19,6 @@ import { PDFDocument } from "pdf-lib";
 import { AppError, forbidden, notFound } from "../errors";
 import { audit, notify } from "../notify";
 import { getFileStore, sha256 } from "../storage";
-import { ensureUnit, resolveDefaults } from "../units/resolve";
 import { afterChange } from "./engine";
 import { syncLiveFileLock } from "./live-file-lock";
 import { loadLetter, type LoadedLetter, type Tx } from "./state";
@@ -98,18 +97,16 @@ export async function createSeason(actor: Actor, input: SeasonInput, db: Db = ge
 
     if (input.copyFromSeasonId) {
       // "צור על בסיס עונה קודמת": the same tracks, with no versions, comments or decisions. The
-      // year changes the start of each track code. The people are today's: the campus + faculty's
-      // advisor, unless last season's advisor is still around.
+      // year changes the start of each track code. The people are last season's, for whoever is
+      // still active in the same role; a track whose person left starts unassigned.
       const { codeFrom, codeTo } = input;
       const renumber = (n: string) => (codeFrom && codeTo !== undefined && n.startsWith(codeFrom) ? codeTo + n.slice(codeFrom.length) : n);
       const old = await tx.select().from(letterRequests).where(eq(letterRequests.seasonId, input.copyFromSeasonId));
       const active = new Map((await tx.select().from(users).where(eq(users.active, true))).map((u) => [u.id, u]));
+      const extras = old.length ? await tx.select().from(letterPeople).where(inArray(letterPeople.letterId, old.map((l) => l.id))) : [];
+      const still = (id: string | null, role: "CONTROL_ADVISOR" | "REGISTRATION_MANAGER") => (id && active.get(id)?.roles.includes(role) ? id : null);
       for (const l of old) {
-        const defaults = await resolveDefaults(tx, l.campus, l.faculty);
-        const keep = active.get(l.advisorId)?.roles.some((r) => r === "CONTROL_ADVISOR");
-        const advisorId = keep ? l.advisorId : defaults.advisorId;
-        if (!advisorId) continue;
-        await tx
+        const [created] = await tx
           .insert(letterRequests)
           .values({
             seasonId: season!.id,
@@ -117,12 +114,16 @@ export async function createSeason(actor: Actor, input: SeasonInput, db: Db = ge
             faculty: l.faculty,
             trackName: l.trackName,
             trackNumber: renumber(l.trackNumber),
-            advisorId,
-            registrationManagerId: l.registrationManagerId,
+            advisorId: still(l.advisorId, "CONTROL_ADVISOR"),
+            registrationManagerId: still(l.registrationManagerId, "REGISTRATION_MANAGER"),
             sourceLetterId: l.id,
             createdBy: actor.userId,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: letterRequests.id });
+        if (!created) continue;
+        const keep = extras.filter((e) => e.letterId === l.id && active.has(e.userId));
+        if (keep.length) await tx.insert(letterPeople).values(keep.map((e) => ({ letterId: created.id, userId: e.userId, kind: e.kind, addedBy: actor.userId })));
       }
     }
     return season!;
@@ -165,9 +166,9 @@ export interface LetterRequestInput {
   faculty: string;
   trackName: string;
   trackNumber: string;
-  /** Default: the advisor of the campus + faculty (set once in "קמפוסים ופקולטות"). */
+  /** The advisor who prepares this track's letter. May be left for later ("שיבוץ"). */
   advisorId?: string;
-  /** Only when this track has its own registration manager; otherwise it comes from the campus + faculty. */
+  /** The track's registration manager. May be left for later. */
   registrationManagerId?: string;
   dueDate?: string | null; // YYYY-MM-DD
 }
@@ -178,16 +179,10 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
   if (text.some((s) => !s)) throw new AppError("INVALID", "צריך למלא קמפוס, פקולטה, מסלול ומספר מסלול");
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new AppError("INVALID", "תאריך היעד לא תקין");
   const [campus, faculty, trackName, trackNumber] = text as [string, string, string, string];
-  // Registered even when this attempt is refused below, so the campus + faculty shows up in the
-  // screen where its people are set.
-  await ensureUnit(db, campus, faculty);
 
   return db.transaction(async (tx) => {
-    const defaults = await resolveDefaults(tx, campus, faculty);
-    const advisorId = input.advisorId ?? defaults.advisorId;
-    if (!advisorId)
-      throw new AppError("INVALID", `לא הוגדרה יועצת בקרה ל${faculty} ב${campus}. מגדירים אותה פעם אחת במסך "קמפוסים ופקולטות".`);
-    await assertRole(tx, [advisorId], "CONTROL_ADVISOR");
+    const advisorId = input.advisorId ?? null;
+    if (advisorId) await assertRole(tx, [advisorId], "CONTROL_ADVISOR");
     if (input.registrationManagerId) await assertRole(tx, [input.registrationManagerId], "REGISTRATION_MANAGER");
     const inserted = await tx
       .insert(letterRequests)
@@ -208,11 +203,12 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
     if (!letter) throw new AppError("CONFLICT", "כבר קיימת דרישת מכתב למסלול הזה בקמפוס הזה בעונה הזאת");
     await audit(tx, actor.userId, "LETTER_CREATED", { letterId: letter.id, seasonId: letter.seasonId }, { trackName });
     // A new letter to prepare lands on the advisor's list.
-    await notify(tx, [advisorId], "YOUR_TURN", letter.id, actor.userId);
+    if (advisorId) await notify(tx, [advisorId], "YOUR_TURN", letter.id, actor.userId);
     return letter;
   });
 }
 
+/** Gives the track its advisor, or a different one. */
 export async function changeAdvisor(actor: Actor, letterId: string, advisorId: string, db: Db = getDb()) {
   await withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
     if (!ab.reassignAdvisor) throw forbidden();
@@ -224,7 +220,10 @@ export async function changeAdvisor(actor: Actor, letterId: string, advisorId: s
   });
 }
 
-/** This track gets its own registration manager (null: back to the campus + faculty's). */
+/**
+ * The track's registration manager (null: nobody yet). If the letter is waiting for review, the
+ * new manager is told it is their turn and the waiting clock starts again for them.
+ */
 export async function setLetterRegistrationManager(actor: Actor, letterId: string, userId: string | null, db: Db = getDb()) {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
   await withLetter(db, actor, letterId, async ({ tx, l }) => {
@@ -234,21 +233,27 @@ export async function setLetterRegistrationManager(actor: Actor, letterId: strin
   });
 }
 
+export type LetterPersonKind = "ADVISOR" | "MANAGER" | "COMMENTER";
+
 /**
  * More people on one track, at the control manager's discretion: another advisor (prepares and
- * fixes like the main one) or another manager (reviews in the registration manager's seat).
+ * fixes like the main one), another manager (reviews in the registration manager's seat) or a
+ * commenter (looks and comments; nothing waits for them and they approve nothing).
  */
-export async function addLetterPerson(actor: Actor, letterId: string, userId: string, kind: "ADVISOR" | "MANAGER", db: Db = getDb()) {
+export async function addLetterPerson(actor: Actor, letterId: string, userId: string, kind: LetterPersonKind, db: Db = getDb()) {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
   await withLetter(db, actor, letterId, async ({ tx, l }) => {
-    await assertRole(tx, [userId], kind === "ADVISOR" ? "CONTROL_ADVISOR" : "REGISTRATION_MANAGER");
+    if (kind === "COMMENTER") {
+      const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.active, true)));
+      if (!u) throw new AppError("INVALID", "המשתמש שנבחר לא פעיל");
+    } else await assertRole(tx, [userId], kind === "ADVISOR" ? "CONTROL_ADVISOR" : "REGISTRATION_MANAGER");
     await tx.insert(letterPeople).values({ letterId, userId, kind, addedBy: actor.userId }).onConflictDoNothing();
     await audit(tx, actor.userId, "PERSON_ADDED", { letterId, seasonId: l.row.seasonId }, { userId, kind });
-    await notify(tx, [userId], "YOUR_TURN", letterId, actor.userId);
+    await notify(tx, [userId], kind === "COMMENTER" ? "ADDED_TO_LETTER" : "YOUR_TURN", letterId, actor.userId);
   });
 }
 
-export async function removeLetterPerson(actor: Actor, letterId: string, userId: string, kind: "ADVISOR" | "MANAGER", db: Db = getDb()) {
+export async function removeLetterPerson(actor: Actor, letterId: string, userId: string, kind: LetterPersonKind, db: Db = getDb()) {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
   await withLetter(db, actor, letterId, async ({ tx, l }) => {
     await tx.delete(letterPeople).where(and(eq(letterPeople.letterId, letterId), eq(letterPeople.userId, userId), eq(letterPeople.kind, kind)));

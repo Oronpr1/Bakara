@@ -103,40 +103,6 @@ export const seasons = pgTable("seasons", {
   createdAt: createdAt(),
 });
 
-/**
- * A campus. Its registration manager and advisor are the default for every faculty in it
- * that does not have its own (e.g. Haifa: one registration manager for all faculties).
- */
-export const campuses = pgTable("campuses", {
-  id: id(),
-  name: text("name").notNull().unique(),
-  registrationManagerId: uuid("registration_manager_id").references(() => users.id),
-  advisorId: uuid("advisor_id").references(() => users.id),
-  /** In this campus only the VP reviews: no registration manager is needed. */
-  onlyVp: boolean("only_vp").notNull().default(false),
-  createdAt: createdAt(),
-});
-
-/**
- * A campus + faculty: its own workspace. The registration manager is set once here and is the
- * registration manager of every track in it, in every season.
- */
-export const units = pgTable(
-  "units",
-  {
-    id: id(),
-    campus: text("campus").notNull(),
-    faculty: text("faculty").notNull(),
-    registrationManagerId: uuid("registration_manager_id").references(() => users.id),
-    /** The control advisor who prepares the letters of this campus + faculty by default. */
-    advisorId: uuid("advisor_id").references(() => users.id),
-    /** In this faculty only the VP reviews: no registration manager is needed. */
-    onlyVp: boolean("only_vp").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex("units_campus_faculty_uq").on(t.campus, t.faculty)],
-);
-
 /** דרישת מכתב: one acceptance letter to prepare for one track in one season. */
 export const letterRequests = pgTable(
   "letter_requests",
@@ -147,9 +113,10 @@ export const letterRequests = pgTable(
     faculty: text("faculty").notNull(),
     trackName: text("track_name").notNull(),
     trackNumber: text("track_number").notNull(),
-    advisorId: uuid("advisor_id").notNull().references(() => users.id),
+    /** The track's own advisor, chosen by the control manager. Empty until she assigns one. */
+    advisorId: uuid("advisor_id").references(() => users.id),
     phase: phaseEnum("phase").notNull().default("DRAFT"),
-    /** Set for this track only; otherwise the registration manager comes from the campus + faculty. */
+    /** The track's registration manager, chosen by the control manager (more can join through letter_people). */
     registrationManagerId: uuid("registration_manager_id").references(() => users.id),
     /** The advisor is mid-fix: set when a reviewer comments or returns the letter, cleared by "שלחתי תיקונים". */
     advisorHold: boolean("advisor_hold").notNull().default(false),
@@ -181,8 +148,9 @@ export const letterRequests = pgTable(
 
 /**
  * Extra people on one track, added by the control manager at her discretion: more advisors
- * (they prepare and fix the letter like the main one) and more managers (they review in the
- * registration manager's seat; any one of them may decide).
+ * (they prepare and fix the letter like the main one), more managers (they review in the
+ * registration manager's seat; any one of them may decide) and commenters (they may look at the
+ * letter and comment, but nothing waits for them and they approve nothing).
  */
 export const letterPeople = pgTable(
   "letter_people",
@@ -190,7 +158,7 @@ export const letterPeople = pgTable(
     id: id(),
     letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id),
-    kind: text("kind", { enum: ["ADVISOR", "MANAGER"] }).notNull(),
+    kind: text("kind", { enum: ["ADVISOR", "MANAGER", "COMMENTER"] }).notNull(),
     addedBy: uuid("added_by").references(() => users.id),
     createdAt: createdAt(),
   },

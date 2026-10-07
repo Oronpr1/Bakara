@@ -55,7 +55,8 @@ export const SEAT_LABELS: Record<SeatRole, string> = {
 
 export const BLOCKER_LABELS: Record<Blocker, string> = {
   NO_VERSION: "צריך להעלות גרסה",
-  NO_REGISTRATION_MANAGER: "לא הוגדר מנהל רישום ליחידה",
+  NO_ADVISOR: "לא שויכה יועצת למסלול",
+  NO_REGISTRATION_MANAGER: "לא שויך מנהל רישום למסלול",
   NO_VP: 'לא הוגדר סמנכ"ל רישום',
   OPEN_COMMENTS: "יש הערות פתוחות",
 };

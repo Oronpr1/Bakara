@@ -258,8 +258,8 @@ function attentionEntries(tower: TowerData, items: HomeLetter[], filters: Filter
       details: (
           <ul className="flex flex-col gap-0.5 text-sm">
             {tower.notStarted.map((s) => (
-              <li key={s.advisorId}>
-                <Link href={listHref(filters, { g: "notstarted", advisor: s.advisorId })} className="inline-flex min-h-9 items-center gap-1 hover:underline">
+              <li key={s.advisorId ?? "none"}>
+                <Link href={listHref(filters, { g: "notstarted", advisor: s.advisorId ?? "none" })} className="inline-flex min-h-9 items-center gap-1 hover:underline">
                   <span className="font-semibold">{s.name}</span>
                   <span className="tabular text-muted">· {letters(s.count)}</span>
                 </Link>

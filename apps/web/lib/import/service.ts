@@ -3,10 +3,9 @@ import { canGlobal, type Actor } from "@al/domain";
 import { eq } from "drizzle-orm";
 import { AppError, forbidden, userMessage } from "../errors";
 import { createLetterRequest } from "../letters/service";
-import { ensureUnit } from "../units/resolve";
 import { parseCsv, parseTrackRows, type TrackRow } from "./tracks";
 
-const { users, units, campuses, letterRequests } = schema;
+const { users, letterRequests } = schema;
 
 export type RowStatus = "OK" | "EXISTS" | "ERROR" | "CREATED" | "SKIPPED";
 export interface PlannedRow extends TrackRow {
@@ -14,13 +13,15 @@ export interface PlannedRow extends TrackRow {
   problem?: string;
   advisorId?: string;
   advisorName?: string;
+  managerId?: string;
+  managerName?: string;
 }
 
 export interface ImportReport {
   rows: PlannedRow[];
   counts: { ok: number; exists: number; error: number; created: number; skipped: number };
-  /** Campus + faculty pairs that still have no registration manager or no advisor. */
-  unitsWithoutManager: { campus: string; faculty: string }[];
+  /** Tracks created (or to be created) with no advisor or no registration manager yet: the control manager assigns them next. */
+  unassigned: { noAdvisor: number; noManager: number };
 }
 
 const key = (campus: string, number: string) => `${campus}\u0000${number}`;
@@ -39,7 +40,7 @@ export async function readTrackFile(name: string, bytes: Buffer) {
   return parsed.rows;
 }
 
-/** Checks every row against the people, the units and the season; changes nothing. */
+/** Checks every row against the people and the season; changes nothing. */
 export async function planTrackImport(
   actor: Actor,
   seasonId: string,
@@ -47,19 +48,26 @@ export async function planTrackImport(
   db: Db = getDb(),
 ): Promise<ImportReport> {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
-  const [people, unitRows, campusRows, existing] = await Promise.all([
+  const [people, existing] = await Promise.all([
     db.select().from(users).where(eq(users.active, true)),
-    db.select().from(units),
-    db.select().from(campuses),
     db.select().from(letterRequests).where(eq(letterRequests.seasonId, seasonId)),
   ]);
-  const campusOf = new Map(campusRows.map((c) => [c.name, c]));
   const advisors = people.filter((u) => u.roles.includes("CONTROL_ADVISOR"));
-  const unitOf = new Map(unitRows.map((u) => [`${u.campus}\u0000${u.faculty}`, u]));
+  const managers = people.filter((u) => u.roles.includes("REGISTRATION_MANAGER"));
   const exists = new Set(existing.map((l) => key(l.campus, l.trackNumber)));
   const seen = new Set<string>();
-  const noManager = new Map<string, { campus: string; faculty: string }>();
-  const noAdvisor = new Map<string, { campus: string; faculty: string }>();
+
+  /** Finds the one person a name or email in the file means: a message when there is none or several. */
+  const find = (pool: typeof people, written: string, what: string): { person?: (typeof people)[number]; problem?: string } => {
+    if (!written) return {};
+    const email = written.trim().toLowerCase();
+    const byEmail = pool.filter((u) => u.email === email);
+    const byName = pool.filter((u) => nameKey(u.name) === nameKey(written));
+    const match = byEmail.length ? byEmail : byName;
+    if (match.length === 0) return { problem: `אין ${what} פעיל/ה בשם או במייל "${written}". מוסיפים אותו במסך "אנשים"` };
+    if (match.length > 1) return { problem: `יותר מ${what} אחד בשם "${written}". אפשר לכתוב מייל` };
+    return { person: match[0] };
+  };
 
   const planned = rows.map((row): PlannedRow => {
     // Placeholders in the registration report ("ללא ממ"ה", code "-") are not tracks.
@@ -72,52 +80,34 @@ export async function planTrackImport(
     if (seen.has(k)) return { ...row, status: "ERROR", problem: "קוד המסלול מופיע פעמיים בקמפוס בקובץ" };
     seen.add(k);
 
-    const unit = unitOf.get(`${row.campus}\u0000${row.faculty}`);
-    const camp = campusOf.get(row.campus);
-    let advisor: (typeof advisors)[number] | undefined;
-    if (row.advisor) {
-      const a = row.advisor.trim().toLowerCase();
-      const byEmail = advisors.filter((u) => u.email === a);
-      const byName = advisors.filter((u) => nameKey(u.name) === nameKey(row.advisor));
-      const match = byEmail.length ? byEmail : byName;
-      if (match.length === 0)
-        return { ...row, status: "ERROR", problem: `אין יועצת בקרה פעילה בשם או במייל "${row.advisor}". מוסיפים אותה במסך "משתמשים"` };
-      if (match.length > 1) return { ...row, status: "ERROR", problem: `יותר מיועצת אחת בשם "${row.advisor}". אפשר לכתוב מייל` };
-      advisor = match[0];
-    } else {
-      const id = unit?.advisorId ?? camp?.advisorId;
-      advisor = advisors.find((u) => u.id === id);
-      if (!advisor) {
-        noAdvisor.set(`${row.campus}\u0000${row.faculty}`, { campus: row.campus, faculty: row.faculty });
-        return { ...row, status: "ERROR", problem: `לא הוגדרה יועצת בקרה ל${row.faculty} ב${row.campus}. מגדירים אותה ב"קמפוסים ופקולטות" ומייבאים שוב` };
-      }
-    }
-    const who = { advisorId: advisor!.id, advisorName: advisor!.name };
-
-    if (exists.has(k)) return { ...row, status: "EXISTS", ...who };
-    // A track in a campus + faculty without a registration manager is still created: it shows red
-    // ("חסר מנהל רישום") until someone is set for it, and cannot be sent to review before that.
-    if (!(unit?.registrationManagerId ?? camp?.registrationManagerId) && !unit?.onlyVp && !camp?.onlyVp)
-      noManager.set(`${row.campus}\u0000${row.faculty}`, { campus: row.campus, faculty: row.faculty });
-    return { ...row, status: "OK", ...who };
+    const adv = find(advisors, row.advisor, "יועץ בקרה");
+    if (adv.problem) return { ...row, status: "ERROR", problem: adv.problem };
+    const mgr = find(managers, row.manager, "מנהל רישום");
+    if (mgr.problem) return { ...row, status: "ERROR", problem: mgr.problem };
+    const who = {
+      advisorId: adv.person?.id,
+      advisorName: adv.person?.name,
+      managerId: mgr.person?.id,
+      managerName: mgr.person?.name,
+    };
+    // A track with nobody assigned is still created: it shows red until the control manager
+    // assigns an advisor and a manager, and cannot be sent to review before that.
+    return exists.has(k) ? { ...row, status: "EXISTS", ...who } : { ...row, status: "OK", ...who };
   });
-  return report(planned, [...new Map([...noManager, ...noAdvisor]).values()]);
+  return report(planned);
 }
 
-function report(rows: PlannedRow[], unitsWithoutManager: ImportReport["unitsWithoutManager"]): ImportReport {
+function report(rows: PlannedRow[]): ImportReport {
   const count = (s: RowStatus) => rows.filter((r) => r.status === s).length;
+  const made = rows.filter((r) => r.status === "OK" || r.status === "CREATED");
   return {
     rows,
     counts: { ok: count("OK"), exists: count("EXISTS"), error: count("ERROR"), created: count("CREATED"), skipped: count("SKIPPED") },
-    unitsWithoutManager,
+    unassigned: { noAdvisor: made.filter((r) => !r.advisorId).length, noManager: made.filter((r) => !r.managerId).length },
   };
 }
 
-/**
- * Creates the letters of every valid row. Campus + faculty pairs new to the system are
- * registered first, so they show up in "קמפוסים ופקולטות" even when their rows cannot be
- * created yet. Importing the same file again only adds what is still missing.
- */
+/** Creates the letters of every valid row. Importing the same file again only adds what is still missing. */
 export async function importTracks(
   actor: Actor,
   seasonId: string,
@@ -125,9 +115,6 @@ export async function importTracks(
   db: Db = getDb(),
 ): Promise<ImportReport> {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
-  const pairs = new Map(rows.filter((r) => r.campus && r.faculty).map((r) => [`${r.campus}\u0000${r.faculty}`, r]));
-  for (const r of pairs.values()) await ensureUnit(db, r.campus, r.faculty);
-
   const plan = await planTrackImport(actor, seasonId, rows, db);
   const rowsOut: PlannedRow[] = [];
   for (const row of plan.rows) {
@@ -143,12 +130,13 @@ export async function importTracks(
         trackName: row.trackName,
         trackNumber: row.trackNumber,
         advisorId: row.advisorId,
+        registrationManagerId: row.managerId,
       });
       rowsOut.push({ ...row, status: "CREATED" });
     } catch (err) {
       rowsOut.push({ ...row, status: "ERROR", problem: userMessage(err) });
     }
   }
-  return report(rowsOut, plan.unitsWithoutManager);
+  return report(rowsOut);
 }
 

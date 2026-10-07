@@ -220,7 +220,7 @@ export function applyFilters(items: readonly HomeLetter[], f: Filters, me: strin
       inGroup(l, group, me) &&
       (!f.campus || l.campus === f.campus) &&
       (!f.faculty || l.faculty === f.faculty) &&
-      (!f.advisor || l.advisorIds.includes(f.advisor)) &&
+      (!f.advisor || (f.advisor === "none" ? l.advisorIds.length === 0 : l.advisorIds.includes(f.advisor))) &&
       (!f.rm || l.rmIds.includes(f.rm)) &&
       (!f.holder || l.holderIds.includes(f.holder)) &&
       (!f.q || matchesSearch(l, f.q)),
@@ -266,7 +266,7 @@ export function filterOptions(items: readonly HomeLetter[]) {
   return {
     campuses: sortedOptions(items.map((l) => [l.campus, l.campus])),
     faculties: sortedOptions(items.map((l) => [l.faculty, l.faculty])),
-    advisors: sortedOptions(items.map((l) => [l.advisorId, l.advisorName])),
+    advisors: sortedOptions(items.map((l): [string, string] => [l.advisorId ?? "none", l.advisorName])),
     managers: sortedOptions(items.flatMap((l) => l.rmIds.map((id, i): [string, string] => [id, l.rmNames[i] ?? "—"]))),
   };
 }

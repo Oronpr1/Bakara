@@ -14,18 +14,19 @@ export type NotificationType =
   | "COMMENT_STATUS" // ההערה שלך טופלה / לא התקבלה
   | "ACTED_FOR_YOU" // ורוניקה פעלה במקומך
   | "LINK_REQUEST" // גורם אקדמי ביקש קישור חדש
+  | "ADDED_TO_LETTER" // צירפו אותך לצפייה ולהערות על מכתב
   | "REMINDER";
 
 /** Queues in-app notifications (emailed by the notification worker). Never notifies the actor. */
 export async function notify(
   tx: Tx,
-  recipients: Iterable<string>,
+  recipients: Iterable<string | null | undefined>,
   type: NotificationType,
   letterId: string | null,
   actorId: string | null,
   data: Record<string, unknown> = {},
 ) {
-  const ids = [...new Set(recipients)].filter((id) => id !== actorId);
+  const ids = [...new Set(recipients)].filter((id): id is string => Boolean(id) && id !== actorId);
   if (ids.length === 0) return;
   await tx.insert(schema.notifications).values(ids.map((userId) => ({ userId, letterId, type, data })));
 }

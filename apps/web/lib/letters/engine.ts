@@ -35,15 +35,17 @@ export async function afterChange(tx: Tx, letterId: string, before: FlowView, ac
   return { ...loaded, view };
 }
 
+const advisorsOf = (l: LoadedLetter) => [l.input.people.advisorId, ...l.input.people.extraAdvisorIds].filter((id): id is string => Boolean(id));
+
 async function tellNewHolders(tx: Tx, l: LoadedLetter, before: FlowView, after: FlowView, actorId: string | null) {
   const id = l.row.id;
   if (after.phase !== before.phase) {
     if (after.phase === "APPROVED") {
-      await notify(tx, [l.row.advisorId, ...l.input.people.controlIds], "APPROVED_FOR_DISTRIBUTION", id, actorId);
+      await notify(tx, [...advisorsOf(l), ...l.input.people.controlIds], "APPROVED_FOR_DISTRIBUTION", id, actorId);
       return;
     }
     if (after.state === "READY_FOR_ACADEMIC") {
-      await notify(tx, [l.row.advisorId], "READY_FOR_ACADEMIC", id, actorId);
+      await notify(tx, advisorsOf(l), "READY_FOR_ACADEMIC", id, actorId);
       return;
     }
   }
