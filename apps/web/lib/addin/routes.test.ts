@@ -113,8 +113,6 @@ describe.skipIf(!process.env.DATABASE_URL)("Word add-in API", () => {
     }
     await db.delete(schema.auditEvents).where(eq(schema.auditEvents.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
-    await db.delete(schema.units).where(eq(schema.units.campus, campus));
-    await db.delete(schema.campuses).where(eq(schema.campuses.name, campus));
     await db.delete(schema.notifications).where(inArray(schema.notifications.userId, userIds));
     await db.delete(schema.auditEvents).where(inArray(schema.auditEvents.actorId, userIds));
     await db.delete(schema.users).where(inArray(schema.users.id, userIds));

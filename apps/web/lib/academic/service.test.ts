@@ -85,8 +85,6 @@ describe.skipIf(!process.env.DATABASE_URL)("academic approver by personal link",
     await db.delete(schema.academicLinks).where(inArray(schema.academicLinks.userId, userIds));
     await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
-    await db.delete(schema.units).where(eq(schema.units.campus, campus));
-    await db.delete(schema.campuses).where(eq(schema.campuses.name, campus));
     await db
       .delete(schema.auditEvents)
       .where(
@@ -170,7 +168,7 @@ describe.skipIf(!process.env.DATABASE_URL)("academic approver by personal link",
     expect(room.can).toMatchObject({ comment: true, uploadVersion: false, sendToAcademic: false, reassignAdvisor: false, remind: false });
     // No list of staff to pick from for an academic approver.
     expect(room.advisors).toEqual([]);
-    expect(room.addable).toEqual({ advisors: [], managers: [] });
+    expect(room.addable).toEqual({ advisors: [], managers: [], commenters: [] });
     expect(room.academics).toEqual([expect.objectContaining({ userId: headId, link: "active", decision: null })]);
     expect(room.academics[0]!.lastOpenedAt).not.toBeNull();
     // Another letter is not theirs.

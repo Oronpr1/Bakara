@@ -4,7 +4,7 @@
 //   tsx scripts/seed-demo.ts <tracks.xlsx> <letter1.docx> <letter1.pdf> <letter2.docx> <letter2.pdf>
 import { closeDb, getDb, hashPassword, schema } from "@al/db";
 import type { Actor, Role } from "@al/domain";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { inviteAcademic } from "../lib/academic/service";
 import { importTracks, readTrackFile } from "../lib/import/service";
@@ -17,7 +17,7 @@ import {
   submitLetter,
   uploadVersion,
 } from "../lib/letters/service";
-import { setCampusDefaults, setUnitDefaults } from "../lib/units/service";
+import { bulkAssign } from "../lib/settings/assign";
 
 const [xlsx, docx1, pdf1, docx2, pdf2] = process.argv.slice(2);
 if (!xlsx || !docx1 || !pdf1 || !docx2 || !pdf2) {
@@ -70,15 +70,18 @@ const season = await createSeason(veronica, { name: SEASON });
 const all = await readTrackFile("tracks.xlsx", Buffer.from(readFileSync(xlsx)));
 const business = all.filter((r) => r.campus === CAMPUS && r.faculty === FACULTY);
 const haredi = all.filter((r) => r.campus === HAREDI);
-// Register the campuses + faculties, then say who is responsible for them once.
-await importTracks(veronica, season.id, [business[0]!, haredi[0]!]);
-const unit = (await db.query.units.findFirst({ where: and(eq(schema.units.campus, CAMPUS), eq(schema.units.faculty, FACULTY)) }))!;
-await setUnitDefaults(veronica, unit.id, { registrationManagerId: veronica.userId, advisorId: shaked.userId });
-const harediCampus = (await db.query.campuses.findFirst({ where: eq(schema.campuses.name, HAREDI) }))!;
-await setCampusDefaults(veronica, harediCampus.id, { registrationManagerId: shuli.userId, advisorId: shuli.userId });
+// The tracks come in unassigned; Veronica then puts the people on them, as she does in the settings.
 const report = await importTracks(veronica, season.id, [...business, ...haredi]);
 console.log(`Imported ${report.counts.created + report.counts.exists} tracks (${report.counts.skipped} placeholder rows skipped, ${report.counts.error} with problems)`);
 for (const r of report.rows.filter((x) => x.status === "ERROR")) console.log(`  line ${r.line}: ${r.problem}`);
+{
+  const made = await db.select().from(letterRequests).where(eq(letterRequests.seasonId, season.id));
+  const idsOf = (campus: string) => made.filter((l) => l.campus === campus).map((l) => l.id);
+  await bulkAssign(veronica, { letterIds: idsOf(CAMPUS), mode: "ADVISOR", userId: shaked.userId });
+  await bulkAssign(veronica, { letterIds: idsOf(CAMPUS), mode: "MANAGER", userId: veronica.userId });
+  await bulkAssign(veronica, { letterIds: idsOf(HAREDI), mode: "ADVISOR", userId: shuli.userId });
+  await bulkAssign(veronica, { letterIds: idsOf(HAREDI), mode: "MANAGER", userId: shuli.userId });
+}
 
 const byCode = async (code: string) =>
   (await db.select().from(letterRequests).where(eq(letterRequests.seasonId, season.id))).find((l) => l.trackNumber === code)!;

@@ -122,8 +122,8 @@ export const RULE_GROUPS: readonly RuleGroup[] = [
         "create-letter",
         "להקים דרישת מכתב (מסלול אחד)",
         "access.ts canGlobal CREATE_LETTER_REQUEST",
-        { CONTROL_MANAGER: Y, VP_REGISTRATION: Y, CONTROL_ADVISOR: Y, REGISTRATION_MANAGER: Y },
-        { global: "CREATE_LETTER_REQUEST" },
+        { ADMIN: Y, CONTROL_MANAGER: Y, VP_REGISTRATION: Y },
+        { global: "CREATE_LETTER_REQUEST", hint: "ורוניקה מקימה מסלול ומשבצת בו יועצת ומנהלי רישום" },
       ),
       row("upload", "להעלות גרסה (PDF, ואפשר גם Word)", "access.ts abilities.uploadVersion", {
         CONTROL_MANAGER: P("בכל עת, עד שהמכתב מאושר"),

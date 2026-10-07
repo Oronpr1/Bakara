@@ -34,8 +34,8 @@ export const CAPABILITIES: readonly Capability[] = [
   {
     key: "CREATE_LETTER_REQUEST",
     label: "להקים דרישת מכתב",
-    hint: "מסלול חדש שצריך מכתב",
-    defaults: ["CONTROL_MANAGER", "VP_REGISTRATION", "CONTROL_ADVISOR", "REGISTRATION_MANAGER"],
+    hint: "מסלול חדש שצריך מכתב. ורוניקה מקימה מסלולים ומשבצת בהם יועצת ומנהלים",
+    defaults: TOP,
   },
   { key: "ACT_FOR_OTHERS", label: "לפעול במקום אחר", hint: 'למשל לחתום במקום הסמנכ"ל, להעלות גרסה במקום היועצת. נרשם "במקום ..."', defaults: ["CONTROL_MANAGER"] },
   { key: "SKIP_ACADEMIC", label: "לדלג על הגורם האקדמי", hint: "בסמכותם, מהסיבות שלהם", defaults: ["CONTROL_MANAGER", "VP_REGISTRATION"] },

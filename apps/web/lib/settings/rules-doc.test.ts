@@ -19,7 +19,7 @@ function input(phase: Phase, extra: Partial<FlowInput> = {}): FlowInput {
     phase,
     latestVersion: 1,
     settings: { ...DEFAULT_SETTINGS, sequential: false },
-    people: { advisorId: "adv", extraAdvisorIds: [], rmIds: ["rm"], onlyVp: false, vpIds: ["vp"], controlIds: ["cm"] },
+    people: { advisorId: "adv", extraAdvisorIds: [], rmIds: ["rm"], commenterIds: [], vpIds: ["vp"], controlIds: ["cm"] },
     academics: phase === "ACADEMIC" ? ["acad"] : [],
     decisions: [],
     openComments: 0,

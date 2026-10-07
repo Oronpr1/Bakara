@@ -50,7 +50,7 @@ function letter(
     phase: "DRAFT",
     latestVersion: 1,
     settings: { sequential: true, controlReview: false },
-    people: { advisorId: "adv", extraAdvisorIds: [], rmIds: ["rm"], onlyVp: false, vpIds: ["vp"], controlIds: ["cm"], ...o.people },
+    people: { advisorId: "adv", extraAdvisorIds: [], rmIds: ["rm"], commenterIds: [], vpIds: ["vp"], controlIds: ["cm"], ...o.people },
     academics: [],
     decisions: [],
     openComments: 0,
@@ -116,13 +116,15 @@ describe("one letter as a list row (toSummary)", () => {
     expect(toSummary(l, cm, names).mine).toBe(false);
   });
 
-  it("a unit with nobody to review is blocked, in red, and still with the advisor", () => {
+  it("a track with nobody to review is blocked, in red, and still with the advisor", () => {
     const s = toSummary(letter({ people: { rmIds: [] } }), cm, names);
     expect(s.state).toBe("BLOCKED");
     expect(s.blockers).toEqual(["NO_REGISTRATION_MANAGER"]);
     expect(s.holderNames).toEqual(["שקד"]);
-    // "Only the VP" in this unit: not blocked.
-    expect(toSummary(letter({ people: { rmIds: [], onlyVp: true } }), cm, names).state).toBe("PREPARING");
+    // No advisor either: blocked for that too, and nobody holds it.
+    const noAdvisor = toSummary(letter({ people: { advisorId: null } }), cm, names);
+    expect(noAdvisor).toMatchObject({ state: "BLOCKED", advisorId: null, advisorName: "לא שויכה יועצת", holderNames: [] });
+    expect(noAdvisor.blockers).toEqual(["NO_ADVISOR"]);
   });
 
   it("in review the registration manager holds it first, then the VP(s); people with no name show a dash", () => {

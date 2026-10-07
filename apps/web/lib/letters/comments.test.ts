@@ -74,8 +74,6 @@ describe.skipIf(!process.env.DATABASE_URL)("marks on the PDF: note, X and line",
     const letters = await db.select({ id: schema.letterRequests.id }).from(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
-    await db.delete(schema.units).where(eq(schema.units.campus, campus));
-    await db.delete(schema.campuses).where(eq(schema.campuses.name, campus));
     await db
       .delete(schema.auditEvents)
       .where(

@@ -7,7 +7,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { inviteAcademic, redeemLink } from "../academic/service";
 import { setMailer } from "../mail";
 import { setFileStore } from "../storage";
-import { setCampusDefaults } from "../units/service";
 import { getSessionUser } from "../auth/service";
 import { createComment, deleteDraftComment, replyToComment, setCommentStatus, updateDraftComment } from "./comments";
 import { getHome, getLetterRoom, listLetters } from "./queries";
@@ -19,10 +18,12 @@ import {
   decideLetter,
   markInGilboa,
   remindHolders,
+  removeLetterPerson,
   reopenLetter,
   resetLetterApprovals,
   resubmitLetter,
   retractApproval,
+  setLetterRegistrationManager,
   skipAcademicRound,
   submitLetter,
   uploadVersion,
@@ -79,24 +80,23 @@ describe.skipIf(!process.env.DATABASE_URL)("a letter from preparation to approve
     await db.delete(schema.academicLinks).where(inArray(schema.academicLinks.userId, all));
     await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
-    await db.delete(schema.units).where(eq(schema.units.campus, campus));
-    await db.delete(schema.campuses).where(eq(schema.campuses.name, campus));
     await db.delete(schema.auditEvents).where(or(inArray(schema.auditEvents.actorId, all)));
     await db.delete(schema.users).where(inArray(schema.users.id, all));
     await closeDb();
   });
 
-  it("a letter in a campus nobody manages yet cannot be sent; setting the campus fixes it", async () => {
-    await expect(createLetterRequest(people.cm!, { seasonId, campus, faculty: "מנהל עסקים", trackName: "x", trackNumber: "227000001" })).rejects.toThrow(/יועצת בקרה/);
-    const camp = (await getDb().query.campuses.findFirst({ where: eq(schema.campuses.name, campus) }))!;
-    await setCampusDefaults(people.cm!, camp.id, { advisorId: people.adv!.userId });
+  it("a track nobody is assigned to cannot be sent; assigning an advisor and a manager one by one fixes it", async () => {
+    await expect(createLetterRequest(people.adv!, { seasonId, campus, faculty: "מנהל עסקים", trackName: "x", trackNumber: "227000001" })).rejects.toThrow(); // only the control manager sets tracks up
+    await expect(createLetterRequest(people.cm!, { seasonId, campus, faculty: "מנהל עסקים", trackName: "x", trackNumber: "227000001", advisorId: people.rm!.userId })).rejects.toThrow(/לא מתאים לתפקיד/); // an advisor must be an advisor
     const letter = await createLetterRequest(people.cm!, { seasonId, campus, faculty: "מנהל עסקים", trackName: "מימון BA", trackNumber: "227113006" });
     letterId = letter.id;
+    expect((await viewOf(letterId)).blockers).toEqual(expect.arrayContaining(["NO_ADVISOR", "NO_REGISTRATION_MANAGER"])); // nobody yet
+    await changeAdvisor(people.cm!, letterId, people.adv!.userId);
     expect((await notes(people.adv!.userId, "YOUR_TURN")).length).toBeGreaterThan(0); // a new letter to prepare
     expect((await viewOf(letterId)).state).toBe("BLOCKED"); // no registration manager
     await uploadVersion(people.adv!, letterId, { docx, pdf: await pdf() });
     await expect(submitLetter(people.adv!, letterId)).rejects.toThrow(/מנהל רישום/);
-    await setCampusDefaults(people.cm!, camp.id, { registrationManagerId: people.rm!.userId });
+    await setLetterRegistrationManager(people.cm!, letterId, people.rm!.userId);
     expect((await viewOf(letterId)).state).toBe("PREPARING");
   });
 
@@ -230,7 +230,7 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     ids.push(u!.id);
   }
   async function makeLetter(n: string) {
-    const l = await createLetterRequest(ppl.cm!, { seasonId, campus: camp, faculty: "משפטים", trackName: `מסלול ${n}`, trackNumber: `22700${n}` });
+    const l = await createLetterRequest(ppl.cm!, { seasonId, campus: camp, faculty: "משפטים", trackName: `מסלול ${n}`, trackNumber: `22700${n}`, advisorId: ppl.adv!.userId, registrationManagerId: ppl.rm!.userId });
     await uploadVersion(ppl.adv!, l.id, { docx, pdf: await pdf() });
     await submitLetter(ppl.adv!, l.id);
     return l.id;
@@ -250,10 +250,8 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     await user("rm", ["REGISTRATION_MANAGER"]);
     await user("rm2", ["REGISTRATION_MANAGER"]);
     await user("shuli", ["CONTROL_ADVISOR", "REGISTRATION_MANAGER"]);
+    await user("dean", []); // someone with no role at all: only ever attached to a track by the control manager
     seasonId = (await createSeason(ppl.cm!, { name: `עונה ${tag2}` })).id;
-    await getDb().insert(schema.campuses).values({ name: camp }).onConflictDoNothing();
-    const c = (await getDb().query.campuses.findFirst({ where: eq(schema.campuses.name, camp) }))!;
-    await setCampusDefaults(ppl.cm!, c.id, { advisorId: ppl.adv!.userId, registrationManagerId: ppl.rm!.userId });
   });
 
   afterAll(async () => {
@@ -265,8 +263,6 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     await db.delete(schema.academicLinks).where(inArray(schema.academicLinks.userId, all));
     await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
-    await db.delete(schema.units).where(eq(schema.units.campus, camp));
-    await db.delete(schema.campuses).where(eq(schema.campuses.name, camp));
     await db.delete(schema.auditEvents).where(inArray(schema.auditEvents.actorId, all));
     await db.delete(schema.users).where(inArray(schema.users.id, all));
     await closeDb();
@@ -340,6 +336,49 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId, ppl.rm2!.userId]);
   });
 
+  it("a commenter attached to a track sees it and comments, nothing waits for them, and the control manager can remove them", async () => {
+    const id = await makeLetter("8"); // in review, waiting for the registration manager
+    expect((await listLetters(ppl.dean!, seasonId)).some((l) => l.id === id)).toBe(false);
+    await expect(addLetterPerson(ppl.adv!, id, ppl.dean!.userId, "COMMENTER")).rejects.toThrow(); // only the control manager
+    await addLetterPerson(ppl.cm!, id, ppl.dean!.userId, "COMMENTER");
+    expect((await notes(ppl.dean!.userId, "ADDED_TO_LETTER")).length).toBe(1);
+    const room = await getLetterRoom(ppl.dean!, id);
+    expect(room.can).toMatchObject({ view: true, comment: true, reply: true });
+    expect(room.can.decide).toEqual([]);
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId]); // still the manager's turn, not theirs
+    const c = await createComment(ppl.dean!, id, { anchor: anchor(), body: "שימו לב לתאריך" });
+    expect(c.publishedAt).not.toBeNull(); // no draft: a commenter's mark is published at once
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.adv!.userId]); // it gives the advisor something to fix
+    await expect(decideLetter(ppl.dean!, id, { seat: "RM", kind: "APPROVED" })).rejects.toThrow();
+    await removeLetterPerson(ppl.cm!, id, ppl.dean!.userId, "COMMENTER");
+    await expect(getLetterRoom(ppl.dean!, id)).rejects.toThrow();
+  });
+
+  it("changing a track's registration manager moves a waiting letter to the new person and tells them", async () => {
+    const id = await makeLetter("10");
+    await setLetterRegistrationManager(ppl.cm!, id, ppl.rm2!.userId);
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm2!.userId]);
+    expect((await notes(ppl.rm2!.userId, "YOUR_TURN")).length).toBeGreaterThan(0);
+    expect((await listLetters(ppl.rm!, seasonId)).some((l) => l.id === id)).toBe(false); // the old manager no longer has it
+  });
+
+  it("copying a season keeps each track's own people, for whoever is still active", async () => {
+    const id = await makeLetter("11");
+    await addLetterPerson(ppl.cm!, id, ppl.rm2!.userId, "MANAGER");
+    await addLetterPerson(ppl.cm!, id, ppl.dean!.userId, "COMMENTER");
+    const next = await createSeason(ppl.cm!, { name: `עונה הבאה ${tag2}`, copyFromSeasonId: seasonId, codeFrom: "227", codeTo: "228" });
+    const db = getDb();
+    try {
+      const copied = (await db.select().from(schema.letterRequests).where(eq(schema.letterRequests.seasonId, next.id))).find((r) => r.trackNumber === "2280011")!;
+      expect(copied).toMatchObject({ advisorId: ppl.adv!.userId, registrationManagerId: ppl.rm!.userId, phase: "DRAFT", latestVersion: 0 });
+      const extras = await db.select().from(schema.letterPeople).where(eq(schema.letterPeople.letterId, copied.id));
+      expect(extras.map((e) => `${e.kind}:${e.userId}`).sort()).toEqual([`COMMENTER:${ppl.dean!.userId}`, `MANAGER:${ppl.rm2!.userId}`].sort());
+    } finally {
+      await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, next.id));
+      await db.delete(schema.seasons).where(eq(schema.seasons.id, next.id));
+    }
+  });
+
   it("marks come as a note, an X or a line, with a colour; a reviewer's draft can be moved, recoloured and removed, a published one cannot", async () => {
     const id = await makeLetter("7");
     await expect(createComment(ppl.rm!, id, { anchor: anchor(), kind: "NOTE" })).rejects.toThrow(/לכתוב את ההערה/); // a note needs words
@@ -363,7 +402,7 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
   });
 
   it("a version may be a PDF alone: it is stored, shown, sent to review, and has no Word file", async () => {
-    const l = await createLetterRequest(ppl.cm!, { seasonId, campus: camp, faculty: "משפטים", trackName: "מסלול PDF בלבד", trackNumber: "227099" });
+    const l = await createLetterRequest(ppl.cm!, { seasonId, campus: camp, faculty: "משפטים", trackName: "מסלול PDF בלבד", trackNumber: "227099", advisorId: ppl.adv!.userId, registrationManagerId: ppl.rm!.userId });
     const v = await uploadVersion(ppl.adv!, l.id, { pdf: await pdf(2), note: "רק PDF" });
     expect(v.docxKey).toBeNull();
     expect(v.pdfKey).toBeTruthy();
