@@ -24,6 +24,7 @@ export function PeoplePanel({
   const [sending, setSending] = useState(false);
   const extraAdvisors = room.extraPeople.filter((p) => p.kind === "ADVISOR").map((p) => p.name);
   const extraManagers = room.extraPeople.filter((p) => p.kind === "MANAGER").map((p) => p.name);
+  const commenters = room.extraPeople.filter((p) => p.kind === "COMMENTER").map((p) => p.name);
   const currentSeats = new Set(room.seats.map((s) => s.key));
   // Decisions of earlier steps (the seats of the current step are shown above them).
   const earlier = room.history.filter((e) => {
@@ -39,12 +40,17 @@ export function PeoplePanel({
           במסלול
         </h3>
         <dl className="flex flex-col divide-y divide-line rounded-lg border border-line">
-          <Row label="יועצת" value={joinNames([room.advisorName, ...extraAdvisors])} />
+          <Row
+            label="יועצת"
+            value={room.advisorId ? joinNames([room.advisorName, ...extraAdvisors]) : extraAdvisors.length ? joinNames(extraAdvisors) : "לא שויכה"}
+            warn={!room.advisorId && extraAdvisors.length === 0}
+          />
           <Row
             label="מנהל רישום"
             value={room.managerNames.length || extraManagers.length ? joinNames([...room.managerNames, ...extraManagers]) : "לא הוגדר"}
             warn={room.managerNames.length === 0 && extraManagers.length === 0}
           />
+          {commenters.length > 0 && <Row label="מעירים (בלי אישור)" value={joinNames(commenters)} />}
         </dl>
       </section>
 
