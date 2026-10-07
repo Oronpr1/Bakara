@@ -1,8 +1,10 @@
 // The tabs of the settings area ("הגדרות") and who sees each one. Who may do what comes from the
 // core (canGlobal); this file only says which global action each tab belongs to.
+// The order is the order of setting up: people once, then the tracks they are assigned to, then
+// how each season works, and the rules to read.
 import { canGlobal, type Actor, type GlobalAction } from "@al/domain";
 
-export type SettingsTabKey = "people" | "tracks" | "units" | "seasons" | "rules";
+export type SettingsTabKey = "people" | "tracks" | "seasons" | "rules";
 
 export interface SettingsTab {
   key: SettingsTabKey;
@@ -18,21 +20,14 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
     key: "people",
     href: "/settings/people",
     label: "אנשים",
-    blurb: "מי עובד במערכת ובאיזה תפקיד: יועצות, מנהלי רישום, סמנכ\"ל וגורמים אקדמיים.",
+    blurb: "מקימים פעם אחת את כל מי שעובד במערכת: יועצות, מנהלי רישום, סמנכ\"ל וגורמים אקדמיים.",
     need: "MANAGE_USERS",
   },
   {
     key: "tracks",
     href: "/settings/tracks",
     label: "מסלולים והקצאות",
-    blurb: "המסלולים של העונה, ומי אחראי על כל אחד: יועצת, מנהל רישום ואנשים נוספים.",
-    need: "MANAGE_UNITS",
-  },
-  {
-    key: "units",
-    href: "/settings/units",
-    label: "קמפוסים ופקולטות",
-    blurb: "ברירות מחדל לכל קמפוס ופקולטה: מי מנהל הרישום ומי היועצת.",
+    blurb: "המסלולים של העונה, ומי משובץ בכל אחד: יועצת, מנהל רישום ואנשים נוספים.",
     need: "MANAGE_UNITS",
   },
   {

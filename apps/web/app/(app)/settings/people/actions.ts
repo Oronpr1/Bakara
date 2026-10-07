@@ -8,7 +8,7 @@ import { createUser, setUserActive, setUserPassword, setUserRoles } from "@/lib/
 
 const roles = z.array(z.enum(ROLES), { message: "תפקיד לא מוכר" }).min(1, { message: "צריך לבחור לפחות תפקיד אחד" });
 const password = z.string({ message: "צריך לקבוע סיסמה" }).min(1, { message: "צריך לקבוע סיסמה" });
-const PATHS = ["/settings/people", "/settings/tracks", "/settings/units"];
+const PATHS = ["/settings/people", "/settings/tracks"];
 
 export async function createPersonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(

@@ -1,11 +1,11 @@
 "use client";
 
-import { Building2, CalendarRange, ListChecks, Scale, Users } from "lucide-react";
+import { CalendarRange, ListChecks, Scale, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { SettingsTabKey } from "@/lib/settings/tabs";
 
-const ICONS = { people: Users, tracks: ListChecks, units: Building2, seasons: CalendarRange, rules: Scale } as const;
+const ICONS = { people: Users, tracks: ListChecks, seasons: CalendarRange, rules: Scale } as const;
 
 /** The settings area's own tabs, under the page title. Scrolls sideways on a phone, never the page. */
 export function SettingsTabs({ tabs }: { tabs: { key: SettingsTabKey; href: string; label: string }[] }) {
