@@ -1,7 +1,7 @@
 // Icons and colours of the home screen's groups. Colour follows the shared state families
 // (components/Pills.tsx); the personal tiles ("לטיפול שלך"…) are not states, so they stay neutral.
 import type { Tone } from "@al/domain";
-import { BadgeCheck, Inbox, ListTodo, type LucideIcon, ScanSearch, Send, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Eye, Inbox, ListTodo, type LucideIcon, ScanSearch, Send, ShieldCheck } from "lucide-react";
 import type { Group } from "@/lib/home/model";
 
 export const PERSONAL_ICONS: Partial<Record<Group, LucideIcon>> = {
@@ -11,6 +11,7 @@ export const PERSONAL_ICONS: Partial<Record<Group, LucideIcon>> = {
   final: ShieldCheck,
   others: Send,
   done: BadgeCheck,
+  attached: Eye,
 };
 
 /** Static class names per colour family (Tailwind needs to see them whole). */

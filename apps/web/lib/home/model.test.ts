@@ -32,6 +32,7 @@ function letter(over: Partial<HomeLetter> = {}): HomeLetter {
     rmIds: [OTHER],
     rmNames: ["אורון"],
     advisorIds: [ME],
+    commenterIds: [],
     canRemind: false,
     canFinal: false,
     finalOnBehalfOf: null,
@@ -67,6 +68,17 @@ describe("groups", () => {
     expect(defaultGroup(control)).toBe("all");
     expect(personalGroups(both)).toEqual(["todo", "review", "others", "done"]);
     expect(personalGroups(vp)).toEqual(["review", "final"]);
+  });
+
+  it("someone attached to a letter to comment gets their own tile, and the letter is in it", () => {
+    const attached = letter({ advisorIds: [OTHER], advisorId: OTHER, mine: false, commenterIds: [ME] });
+    const elsewhere = letter({ advisorIds: [OTHER], advisorId: OTHER, mine: false });
+    expect(inGroup(attached, "attached", ME)).toBe(true);
+    expect(inGroup(elsewhere, "attached", ME)).toBe(false);
+    const commenter = personaOf(["CONTROL_ADVISOR"], ME, [attached]);
+    expect(commenter.commenter).toBe(true);
+    expect(personalGroups(commenter)).toEqual(["todo", "others", "done", "attached"]);
+    expect(personaOf(["CONTROL_ADVISOR"], ME, [elsewhere]).commenter).toBe(false);
   });
 });
 

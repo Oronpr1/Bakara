@@ -35,7 +35,7 @@ async function draftCounts(db: Db, actor: Actor, letterIds: string[]) {
 export async function letterExtras(actor: Actor, letterIds: string[], db: Db = getDb()) {
   const out = new Map<
     string,
-    { rmIds: string[]; advisorIds: string[]; canRemind: boolean; canFinal: boolean; finalOnBehalfOf: string | null; myDrafts: number; openComments: number }
+    { rmIds: string[]; advisorIds: string[]; commenterIds: string[]; canRemind: boolean; canFinal: boolean; finalOnBehalfOf: string | null; myDrafts: number; openComments: number }
   >();
   if (letterIds.length === 0) return out;
   const rows = await db.select().from(letterRequests).where(inArray(letterRequests.id, letterIds));
@@ -46,6 +46,7 @@ export async function letterExtras(actor: Actor, letterIds: string[], db: Db = g
     out.set(l.row.id, {
       rmIds: [...l.input.people.rmIds],
       advisorIds: [l.input.people.advisorId, ...l.input.people.extraAdvisorIds].filter((id): id is string => Boolean(id)),
+      commenterIds: [...l.input.people.commenterIds],
       canRemind: can.remind,
       canFinal: Boolean(final),
       finalOnBehalfOf: final?.onBehalfOf ?? null,
@@ -69,6 +70,7 @@ export async function getHomeView(actor: Actor, seasonId: string, db: Db = getDb
       rmIds,
       rmNames: rmIds.map((id) => names.get(id) ?? "—"),
       advisorIds: x?.advisorIds ?? (l.advisorId ? [l.advisorId] : []),
+      commenterIds: x?.commenterIds ?? [],
       canRemind: x?.canRemind ?? false,
       canFinal: x?.canFinal ?? false,
       finalOnBehalfOf: x?.finalOnBehalfOf ? (names.get(x.finalOnBehalfOf) ?? null) : null,

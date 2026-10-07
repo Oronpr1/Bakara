@@ -11,6 +11,8 @@ export interface HomeLetter extends LetterSummary {
   rmNames: string[];
   /** Every advisor of the track: the main one and any added by the control manager. */
   advisorIds: string[];
+  /** People the control manager attached to look and comment only. */
+  commenterIds: string[];
   /** The actor may send a reminder about this letter ("תזכיר"). */
   canRemind: boolean;
   /** The actor may give the final approval right now (in their own name or in the VP's place). */
@@ -27,6 +29,8 @@ export interface Persona {
   vp: boolean;
   rm: boolean;
   advisor: boolean;
+  /** Attached to some letters to look and comment. */
+  commenter: boolean;
 }
 
 export function personaOf(roles: readonly Role[], userId: string, letters: readonly HomeLetter[]): Persona {
@@ -36,6 +40,7 @@ export function personaOf(roles: readonly Role[], userId: string, letters: reado
     vp: roles.includes("VP_REGISTRATION"),
     rm: roles.includes("REGISTRATION_MANAGER") || letters.some((l) => l.rmIds.includes(userId)),
     advisor: roles.includes("CONTROL_ADVISOR") || letters.some((l) => l.advisorIds.includes(userId)),
+    commenter: letters.some((l) => l.commenterIds.includes(userId)),
   };
 }
 
@@ -49,6 +54,7 @@ export const GROUPS = [
   "final",
   "others",
   "done",
+  "attached",
   ...PHASES,
   "fixing",
   "overdue",
@@ -78,6 +84,8 @@ export function inGroup(l: HomeLetter, g: Group, me: string): boolean {
       return l.advisorIds.includes(me) && REVIEWING.includes(l.holderKind);
     case "done":
       return l.advisorIds.includes(me) && l.state === "APPROVED";
+    case "attached":
+      return l.commenterIds.includes(me);
     case "fixing":
       return l.state === "FIXING";
     case "overdue":
@@ -104,6 +112,7 @@ export const GROUP_TITLES: Record<Group, string> = {
   final: "ממתין לאישור הסופי שלך",
   others: "בבדיקה אצל אחרים",
   done: "מאושרים",
+  attached: "צורפתי להערות",
   DRAFT: "בהכנה",
   REVIEW: "בבדיקה",
   ACADEMIC: "אצל גורם אקדמי",
@@ -124,6 +133,7 @@ export function personalGroups(p: Persona): Group[] {
   if (p.rm || p.vp) out.push("review");
   if (p.vp) out.push("final");
   if (p.advisor) out.push("others", "done");
+  if (p.commenter) out.push("attached");
   // The control manager's own queue shows only when something waits for her personally.
   if (p.control && out.length === 0) out.push("mine");
   return out;
