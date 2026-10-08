@@ -2,7 +2,7 @@
 // a fake SharePoint library. What Graph itself does is covered in m365.test.ts.
 import { closeDb, getDb, schema } from "@al/db";
 import type { Actor, Role } from "@al/domain";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { FakeDocumentHost } from "@/test/fake-document-host";
@@ -10,10 +10,12 @@ import { setDocumentHost } from "../m365/config";
 import { emptyLetterDocx } from "../m365/template";
 import { setFileStore } from "../storage";
 import { currentCTag, liveFileStatus, openInWord, versionFromSharePoint } from "./live-file";
-import { createLetterRequest, createSeason, performTransition, uploadVersion } from "./service";
+import { syncLiveFileLock } from "./live-file-lock";
+import { createLetterRequest, createSeason, decideLetter, reopenLetter, skipAcademicRound, submitLetter, uploadVersion } from "./service";
 import { loadLetter } from "./state";
 
 const tag = `live-${process.pid}-${Date.now()}`;
+const campus = `תל אביב ${tag}`;
 const files = new Map<string, Uint8Array>();
 const people: Record<string, Actor> = {};
 const userIds: string[] = [];
@@ -38,17 +40,15 @@ async function pdf() {
 }
 
 async function newLetter() {
-  const { adv, rm, vp } = people;
-  const letter = await createLetterRequest(adv!, {
+  const { adv, cm, rm } = people;
+  const letter = await createLetterRequest(cm!, {
     seasonId,
-    campus: "תל אביב",
+    campus,
     faculty: "משפטים",
     trackName: "משפטים",
     trackNumber: String(++track),
     advisorId: adv!.userId,
     registrationManagerId: rm!.userId,
-    vpId: vp!.userId,
-    academicIds: [],
   });
   return letter.id;
 }
@@ -73,10 +73,20 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
   afterEach(() => setDocumentHost(undefined));
 
   afterAll(async () => {
+    setFileStore(undefined);
     const db = getDb();
+    const letters = await db.select({ id: schema.letterRequests.id }).from(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, seasonId));
     await db.delete(schema.seasons).where(eq(schema.seasons.id, seasonId));
-    await db.delete(schema.auditEvents).where(inArray(schema.auditEvents.actorId, userIds));
+    await db
+      .delete(schema.auditEvents)
+      .where(
+        or(
+          inArray(schema.auditEvents.actorId, userIds),
+          eq(schema.auditEvents.seasonId, seasonId),
+          ...(letters.length ? [inArray(schema.auditEvents.letterId, letters.map((l) => l.id))] : []),
+        ),
+      );
     await db.delete(schema.users).where(inArray(schema.users.id, userIds));
     await closeDb();
   });
@@ -104,7 +114,7 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     expect(first.created).toBe(true);
     const r = await row(id);
     expect(first.url).toBe(`ms-word:ofe|u|${r.sharepointWebUrl}`);
-    expect(decodeURIComponent(r.sharepointWebUrl!)).toContain(`תל אביב/${track} - משפטים.docx`);
+    expect(decodeURIComponent(r.sharepointWebUrl!)).toContain(`${campus}/${track} - משפטים.docx`);
     expect(host.files.get(r.sharepointItemId!)!.docx).toEqual(emptyLetterDocx());
 
     expect(await openInWord(people.cm!, id)).toEqual({ url: first.url, created: false });
@@ -127,7 +137,7 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     useHost();
     const id = await newLetter();
     const itemId = host.seed(
-      { seasonName, campus: "תל אביב", trackNumber: String(track), trackName: "משפטים" },
+      { seasonName, campus, trackNumber: String(track), trackName: "משפטים" },
       docx("left over"),
     );
     expect((await openInWord(people.adv!, id)).created).toBe(true);
@@ -150,7 +160,7 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     await expect(versionFromSharePoint(people.rm!, id, undefined)).rejects.toThrow(/הרשאה/);
     const v = await versionFromSharePoint(people.adv!, id, "תיקון שכר לימוד");
     expect(v).toMatchObject({ number: 2, pdfSource: "GRAPH", note: "תיקון שכר לימוד", pageCount: 1 });
-    expect(files.get(v.docxKey)).toEqual(docx("edited in Word"));
+    expect(files.get(v.docxKey!)).toEqual(docx("edited in Word"));
     expect((await liveFileStatus(await row(id)))!.changed).toBe(false);
     await expect(versionFromSharePoint(people.adv!, id, undefined)).rejects.toThrow(/אין שינויים/);
   });
@@ -186,12 +196,20 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     expect((await liveFileStatus(await row(id)))!.changed).toBe(false);
   });
 
+  /** Takes a letter the whole way: prepared, reviewed, academic step skipped, signed. Returns its phase. */
   async function approve(id: string) {
-    const { adv, cm } = people;
+    const { adv, cm, rm, vp } = people;
     await uploadVersion(adv!, id, { docx: docx("final"), pdf: await pdf() });
     await openInWord(adv!, id);
-    while ((await row(id)).stage !== "FINAL_REVIEW") await performTransition(cm!, id, "FORCE_ADVANCE", "בדיקה");
-    return performTransition(cm!, id, "FINAL_APPROVE");
+    await submitLetter(adv!, id);
+    await decideLetter(rm!, id, { seat: "RM", kind: "APPROVED" });
+    await decideLetter(vp!, id, { seat: "VP", kind: "APPROVED" });
+    expect((await row(id)).phase).toBe("ACADEMIC");
+    await skipAcademicRound(cm!, id, "בדיקה");
+    // Nothing is locked on the way: only reaching APPROVED locks the file.
+    expect(host.lockCalls).toEqual([]);
+    await decideLetter(vp!, id, { seat: "FINAL", kind: "APPROVED" });
+    return (await row(id)).phase;
   }
 
   it("locks the file at final approval and unlocks it on reopen", async () => {
@@ -205,7 +223,8 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     await expect(openInWord(people.adv!, id)).rejects.toThrow(/הרשאה/);
     await expect(versionFromSharePoint(people.cm!, id, undefined)).rejects.toThrow(/הרשאה/);
 
-    expect(await performTransition(people.cm!, id, "REOPEN", "תיקון אחרון")).toBe("FINAL_REVIEW");
+    await reopenLetter(people.cm!, id, "תיקון אחרון");
+    expect((await row(id)).phase).toBe("FINAL");
     expect(host.lockCalls).toEqual([true, false]);
     expect(host.files.get(itemId)!.readOnly).toBe(false);
     const types = await auditTypes(id);
@@ -230,6 +249,36 @@ describe.skipIf(!process.env.DATABASE_URL)("SharePoint working file", () => {
     const id = await newLetter();
     expect(await approve(id)).toBe("APPROVED");
     expect(host.lockCalls).toEqual([]);
+    expect(await auditTypes(id)).not.toContain("SHAREPOINT_FILE_LOCKED");
+  });
+  it("locks only on the way into APPROVED and unlocks only on the way out", async () => {
+    const h = useHost();
+    const id = await newLetter();
+    await openInWord(people.adv!, id);
+    const itemId = (await row(id)).sharepointItemId!;
+    const actor = people.cm!.userId;
+    const moves = [
+      ["DRAFT", "REVIEW"],
+      ["REVIEW", "ACADEMIC"],
+      ["ACADEMIC", "FINAL"],
+      ["FINAL", "FINAL"],
+      ["APPROVED", "APPROVED"],
+    ] as const;
+    for (const [from, to] of moves) await syncLiveFileLock(id, from, to, actor, { host: h });
+    expect(h.lockCalls).toEqual([]);
+    await syncLiveFileLock(id, "FINAL", "APPROVED", actor, { host: h });
+    expect(h.files.get(itemId)!.readOnly).toBe(true);
+    await syncLiveFileLock(id, "APPROVED", "REVIEW", actor, { host: h }); // reopened and sent back to review
+    expect(h.lockCalls).toEqual([true, false]);
+    expect(h.files.get(itemId)!.readOnly).toBe(false);
+  });
+
+  it("does nothing without Microsoft 365 or without a working file", async () => {
+    const h = useHost();
+    const id = await newLetter(); // no SharePoint file yet
+    await syncLiveFileLock(id, "FINAL", "APPROVED", people.cm!.userId, { host: h });
+    await syncLiveFileLock(id, "FINAL", "APPROVED", people.cm!.userId, { host: null });
+    expect(h.lockCalls).toEqual([]);
     expect(await auditTypes(id)).not.toContain("SHAREPOINT_FILE_LOCKED");
   });
 });

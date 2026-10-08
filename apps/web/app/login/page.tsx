@@ -5,8 +5,9 @@ import { LoginForm } from "./LoginForm";
 
 export const metadata = { title: "כניסה · מכתבי קבלה" };
 
-export default async function LoginPage() {
-  if (await currentUser()) redirect("/");
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const { next } = await searchParams;
+  if (await currentUser()) redirect(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
   return (
     <main className="grid min-h-dvh place-items-center bg-bg px-4 py-10">
       <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-line bg-surface shadow-pop">
@@ -20,7 +21,7 @@ export default async function LoginPage() {
           </div>
         </div>
         <div className="p-7">
-          <LoginForm />
+          <LoginForm next={next} />
         </div>
       </div>
     </main>

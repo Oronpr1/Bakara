@@ -1,4 +1,4 @@
-import { APPROVER_SLOTS, COMMENT_STATUSES, ROLES, STAGES } from "@al/domain";
+import { COMMENT_STATUSES, PHASES, ROLES } from "@al/domain";
 import { sql } from "drizzle-orm";
 import {
   bigserial,
@@ -17,8 +17,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ROLES);
-export const stageEnum = pgEnum("stage", STAGES);
-export const slotEnum = pgEnum("approver_slot", APPROVER_SLOTS);
+export const phaseEnum = pgEnum("phase", PHASES);
+/** What a reviewer decided: approved, returned for changes, or the decision was cleared. */
+export const decisionKindEnum = pgEnum("decision_kind", ["APPROVED", "CHANGES", "CLEARED"]);
 export const commentStatusEnum = pgEnum("comment_status", COMMENT_STATUSES);
 /** Where a version's PDF came from: the Word add-in, a manual upload, or Graph conversion. */
 export const pdfSourceEnum = pgEnum("pdf_source", ["ADDIN", "UPLOAD", "GRAPH"]);
@@ -92,39 +93,15 @@ export const seasons = pgTable("seasons", {
   sourceSeasonId: uuid("source_season_id"),
   /** Days without a response before an automatic reminder; set by the control manager. */
   reminderIntervalDays: integer("reminder_interval_days").notNull().default(3),
+  /** Registration manager first, then the VP (false: both at once). */
+  sequentialReview: boolean("sequential_review").notNull().default(true),
+  /** The control manager reviews before the registration manager. */
+  controlReview: boolean("control_review").notNull().default(false),
+  /** The date the letters must be approved by. */
+  dueDate: date("due_date"),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: createdAt(),
 });
-
-/**
- * A campus. Its registration manager and advisor are the default for every faculty in it
- * that does not have its own (e.g. Haifa: one registration manager for all faculties).
- */
-export const campuses = pgTable("campuses", {
-  id: id(),
-  name: text("name").notNull().unique(),
-  registrationManagerId: uuid("registration_manager_id").references(() => users.id),
-  advisorId: uuid("advisor_id").references(() => users.id),
-  createdAt: createdAt(),
-});
-
-/**
- * A campus + faculty: its own workspace. The registration manager is set once here and is the
- * registration manager of every track in it, in every season.
- */
-export const units = pgTable(
-  "units",
-  {
-    id: id(),
-    campus: text("campus").notNull(),
-    faculty: text("faculty").notNull(),
-    registrationManagerId: uuid("registration_manager_id").references(() => users.id),
-    /** The control advisor who prepares the letters of this campus + faculty by default. */
-    advisorId: uuid("advisor_id").references(() => users.id),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex("units_campus_faculty_uq").on(t.campus, t.faculty)],
-);
 
 /** דרישת מכתב: one acceptance letter to prepare for one track in one season. */
 export const letterRequests = pgTable(
@@ -136,8 +113,17 @@ export const letterRequests = pgTable(
     faculty: text("faculty").notNull(),
     trackName: text("track_name").notNull(),
     trackNumber: text("track_number").notNull(),
-    advisorId: uuid("advisor_id").notNull().references(() => users.id),
-    stage: stageEnum("stage").notNull().default("DRAFT"),
+    /** The track's own advisor, chosen by the control manager. Empty until she assigns one. */
+    advisorId: uuid("advisor_id").references(() => users.id),
+    phase: phaseEnum("phase").notNull().default("DRAFT"),
+    /** The track's registration manager, chosen by the control manager (more can join through letter_people). */
+    registrationManagerId: uuid("registration_manager_id").references(() => users.id),
+    /** The advisor is mid-fix: set when a reviewer comments or returns the letter, cleared by "שלחתי תיקונים". */
+    advisorHold: boolean("advisor_hold").notNull().default(false),
+    /** The same track's letter in the season this one was copied from: its approved file is the starting point. */
+    sourceLetterId: uuid("source_letter_id"),
+    /** When the advisor marked the approved letter as loaded into Gilboa. */
+    inGilboaAt: timestamp("in_gilboa_at", { withTimezone: true }),
     dueDate: date("due_date"),
     latestVersion: integer("latest_version").notNull().default(0),
     /** The live working DOCX in SharePoint, once Microsoft 365 is connected. */
@@ -147,46 +133,71 @@ export const letterRequests = pgTable(
     sharepointWebUrl: text("sharepoint_web_url"),
     /** Content tag of the live file when the last official version was taken from it. */
     sharepointVersionCTag: text("sharepoint_version_ctag"),
-    stageChangedAt: timestamp("stage_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Since when the current holder has had the letter (for "waiting N days"). */
+    holderSince: timestamp("stage_changed_at", { withTimezone: true }).notNull().defaultNow(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: createdAt(),
   },
   (t) => [
     uniqueIndex("letter_requests_track_uq").on(t.seasonId, t.campus, t.trackNumber),
-    index("letter_requests_season_stage_idx").on(t.seasonId, t.stage),
+    index("letter_requests_season_phase_idx").on(t.seasonId, t.phase),
     index("letter_requests_advisor_idx").on(t.advisorId),
   ],
 );
 
-export const approverAssignments = pgTable(
-  "approver_assignments",
+/**
+ * Extra people on one track, added by the control manager at her discretion: more advisors
+ * (they prepare and fix the letter like the main one) and commenters (they may look at the letter,
+ * comment and suggest until it is finally approved, but nothing waits for them and they approve
+ * nothing). Only the track's own registration manager approves in that seat.
+ */
+export const letterPeople = pgTable(
+  "letter_people",
   {
     id: id(),
     letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id),
-    slot: slotEnum("slot").notNull(),
-    assignedBy: uuid("assigned_by").references(() => users.id),
-    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
-    removedAt: timestamp("removed_at", { withTimezone: true }),
-    removedBy: uuid("removed_by").references(() => users.id),
-    removedReason: text("removed_reason"),
-  },
-  (t) => [index("approver_assignments_letter_idx").on(t.letterId), index("approver_assignments_user_idx").on(t.userId)],
-);
-
-/** An approval given by one approver. It stays valid when new versions are uploaded. */
-export const approvals = pgTable(
-  "approvals",
-  {
-    id: id(),
-    letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
-    userId: uuid("user_id").notNull().references(() => users.id),
-    slot: slotEnum("slot").notNull(),
-    versionNumber: integer("version_number").notNull(),
+    kind: text("kind", { enum: ["ADVISOR", "COMMENTER"] }).notNull(),
+    addedBy: uuid("added_by").references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("approvals_once_uq").on(t.letterId, t.userId, t.slot)],
+  (t) => [index("letter_people_letter_idx").on(t.letterId), uniqueIndex("letter_people_once_uq").on(t.letterId, t.userId, t.kind)],
+);
+
+/** The academic approvers invited to a letter (each answers through a personal link). */
+export const letterAcademics = pgTable(
+  "letter_academics",
+  {
+    id: id(),
+    letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    invitedBy: uuid("invited_by").references(() => users.id),
+    invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (t) => [index("letter_academics_letter_idx").on(t.letterId), uniqueIndex("letter_academics_once_uq").on(t.letterId, t.userId)],
+);
+
+/**
+ * Review decisions, append-only. A seat ("RM", "VP", "FINAL", "ACADEMIC:<user>"...) is approved,
+ * returned or pending according to its last row. CLEARED cancels the one before it.
+ */
+export const reviews = pgTable(
+  "reviews",
+  {
+    id: id(),
+    letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
+    seat: text("seat").notNull(),
+    kind: decisionKindEnum("kind").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    /** The person whose seat it is, when someone else (the control manager) decided in their place. */
+    onBehalfOf: uuid("on_behalf_of").references(() => users.id),
+    versionNumber: integer("version_number").notNull(),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("reviews_letter_idx").on(t.letterId, t.createdAt)],
 );
 
 /** An official version: a frozen DOCX + PDF pair. Files live in blob storage, keyed here. */
@@ -196,13 +207,16 @@ export const versions = pgTable(
     id: id(),
     letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
     number: integer("number").notNull(),
-    docxKey: text("docx_key").notNull(),
-    docxSha256: text("docx_sha256").notNull(),
-    docxSize: integer("docx_size").notNull(),
+    // The Word file is optional: the PDF is the official version, and the Word may stay with the advisor.
+    docxKey: text("docx_key"),
+    docxSha256: text("docx_sha256"),
+    docxSize: integer("docx_size"),
     pdfKey: text("pdf_key").notNull(),
     pdfSha256: text("pdf_sha256").notNull(),
     pdfSize: integer("pdf_size").notNull(),
     pageCount: integer("page_count").notNull(),
+    /** How much of the Word text also appears in the PDF (0-100); a low number means they may not match. */
+    textMatch: integer("text_match"),
     pdfSource: pdfSourceEnum("pdf_source").notNull(),
     sharepointVersionId: text("sharepoint_version_id"),
     note: text("note"),
@@ -227,6 +241,18 @@ export const comments = pgTable(
     /** Image of the marked area at the time of writing, for the "what was here" popup. */
     snapshotKey: text("snapshot_key"),
     body: text("body").notNull(),
+    /** What the mark is: a note with text, an X over some text, or a line. */
+    kind: text("kind", { enum: ["NOTE", "X", "LINE"] }).notNull().default("NOTE"),
+    /** The mark's colour (#rrggbb); null = the default. */
+    color: text("color"),
+    /** For a line: its two end points, each [x, y] as a fraction of the page as displayed. */
+    points: jsonb("points").$type<[number, number][]>(),
+    /** "במקום ___ כתבו ___": the wording the reviewer proposes. */
+    suggestion: text("suggestion"),
+    /** A reviewer's comments stay drafts (seen only by the author) until their decision publishes them. */
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    /** Written by someone attached only to look and comment: advice, which holds nothing back and is not counted as open work. */
+    advisory: boolean("advisory").notNull().default(false),
     authorId: uuid("author_id").notNull().references(() => users.id),
     status: commentStatusEnum("status").notNull().default("OPEN"),
     statusNote: text("status_note"),
@@ -249,6 +275,14 @@ export const commentReplies = pgTable(
   },
   (t) => [index("comment_replies_comment_idx").on(t.commentId, t.createdAt)],
 );
+
+/** The control manager's rules: which roles may do each of the bigger things (see domain/policy.ts). */
+export const rules = pgTable("rules", {
+  capability: text("capability").primaryKey(),
+  roles: roleEnum("roles").array().notNull().default(sql`'{}'`),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** Append-only history of everything that happened. Never updated or deleted by the app. */
 export const auditEvents = pgTable(

@@ -1,12 +1,12 @@
 import { getDb } from "@al/db";
-import { canOnLetter, STAGE_LABELS } from "@al/domain";
+import { abilities, STATE_LABELS } from "@al/domain";
 import type { NextRequest } from "next/server";
 import { json, preflight, readLimitedForm, withAddinUser } from "@/lib/addin/http";
 import { isUuid } from "@/lib/addin/ids";
 import { assertDocumentIsLetter, graphResolverFromEnv } from "@/lib/addin/letters";
 import { AppError, forbidden, notFound, userMessage } from "@/lib/errors";
 import { currentCTag } from "@/lib/letters/live-file";
-import { performTransition, uploadVersion } from "@/lib/letters/service";
+import { resubmitLetter, submitLetter, uploadVersion } from "@/lib/letters/service";
 import { loadLetter } from "@/lib/letters/state";
 
 const METHODS = "POST, OPTIONS";
@@ -36,8 +36,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // The pane names the letter, but the document it was opened from must still be that letter's file.
     await assertDocumentIsLetter(id, documentUrl, { resolve: graphResolverFromEnv() });
     if (submit) {
-      const { state } = await loadLetter(getDb(), id);
-      if (!canOnLetter(actor, "SUBMIT_FOR_REVIEW", state)) throw forbidden();
+      const { input } = await loadLetter(getDb(), id);
+      // The version about to be uploaded is what gets submitted, so only the rights are checked now.
+      const ab = abilities(actor, input);
+      if (!(ab.view && (ab.flow.phase === "DRAFT" || ab.uploadVersion))) throw forbidden();
     }
 
     const docx = await fileBytes(form, "docx", "Word");
@@ -46,11 +48,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const sharepointCTag = await currentCTag(id);
     const version = await uploadVersion(actor, id, { docx, pdf, note, pdfSource: "ADDIN", sharepointCTag });
 
-    let stage = (await loadLetter(getDb(), id)).row.stage;
+    let after = await loadLetter(getDb(), id);
     let submitError: string | undefined;
     if (submit) {
       try {
-        stage = await performTransition(actor, id, "SUBMIT_FOR_REVIEW");
+        // A draft goes to review; a letter being fixed goes back to its reviewers.
+        if (after.row.phase === "DRAFT") await submitLetter(actor, id);
+        else await resubmitLetter(actor, id);
+        after = await loadLetter(getDb(), id);
       } catch (err) {
         // The version is saved either way; tell the user the submission itself did not go through.
         submitError = userMessage(err);
@@ -61,8 +66,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       {
         versionNumber: version.number,
         pageCount: version.pageCount,
-        stage,
-        stageLabel: STAGE_LABELS[stage],
+        stage: after.row.phase,
+        stageLabel: STATE_LABELS[abilities(actor, after.input).flow.state],
         submitted: submit && !submitError,
         ...(submitError ? { submitError } : {}),
       },

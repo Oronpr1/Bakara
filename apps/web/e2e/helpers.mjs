@@ -1,67 +1,65 @@
-// Shared pieces of the manual smoke scripts.
-import { crc32 } from "node:zlib";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+// Shared pieces of the manual smoke scripts. They drive a running dev server with Playwright 1.63
+// (installed at the project root) and the sample data from the seed.
+import { chromium } from "@playwright/test";
 
-/** A minimal DOCX-looking ZIP (stored entries, no compression). */
-export function docxBytes() {
-  const files = [
-    ["[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>'],
-    ["word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'],
-  ];
-  const locals = [];
-  const centrals = [];
-  let offset = 0;
-  for (const [name, text] of files) {
-    const data = Buffer.from(text);
-    const nameBuf = Buffer.from(name);
-    const crc = crc32(data);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(nameBuf.length, 26);
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(nameBuf.length, 28);
-    central.writeUInt32LE(offset, 42);
-    locals.push(local, nameBuf, data);
-    centrals.push(central, nameBuf);
-    offset += 30 + nameBuf.length + data.length;
-  }
-  const cd = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(files.length, 8);
-  end.writeUInt16LE(files.length, 10);
-  end.writeUInt32LE(cd.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, cd, end]);
+/** The sample users of the seed (all with the demo password). */
+export const DEMO = {
+  control: "oron@ono.ac.il", // ורוניקה: control manager, and registration manager of business administration in Ono
+  vp: "yosef.ehr@ono.ac.il",
+  advisor: "demo-shaked@example.test",
+  advisorAndManager: "demo-shuli@example.test",
+};
+
+/**
+ * A clean test browser: never the person's own Chrome or profile, and a mock keychain so macOS
+ * does not ask for the keychain password. Close it in a `finally`.
+ */
+export function launch() {
+  return chromium.launch({ args: ["--use-mock-keychain"], executablePath: process.env.CHROMIUM_PATH || undefined });
 }
 
-export async function pdfBytes() {
-  const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  for (let i = 1; i <= 2; i++) doc.addPage().drawText(`Acceptance letter smoke test, page ${i}`, { x: 50, y: 750, size: 16, font });
-  return Buffer.from(await doc.save());
-}
-
-/** Signs in through the login form with the demo password from the seed. */
-export function loginWith(browser, base, _log) {
-  return async function login(email) {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "he-IL" });
+/** Signs in through the login form; resolves once the app has left the login page. */
+export function loginWith(browser, base) {
+  return async function login(email, viewport = { width: 1280, height: 900 }) {
+    const context = await browser.newContext({ viewport, locale: "he-IL" });
     const page = await context.newPage();
-    await page.goto(`${base}/login`);
+    const res = await page.goto(`${base}/login`);
+    if (!res || res.status() >= 400) {
+      await context.close();
+      throw new Error(`the login page answered ${res?.status() ?? "nothing"}`);
+    }
     await page.fill("#email", email);
     await page.fill("#password", process.env.DEMO_PASSWORD ?? "demo-password-1");
-    await page.click("button:has-text('כניסה')");
-    await page.waitForURL(`${base}/`);
+    await page.press("#password", "Enter");
+    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
     return page;
   };
+}
+
+/** How far the page scrolls sideways (0 is right). */
+export const sidewaysOverflow = (page) =>
+  page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+/**
+ * Opens `url` at desktop and phone width, screenshots both, and returns what went wrong:
+ * an error status, script errors on the page, or sideways scrolling.
+ */
+export async function checkPage(page, url, name, out) {
+  const problems = [];
+  const errors = [];
+  const onError = (e) => errors.push(e.message);
+  page.on("pageerror", onError);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const res = await page.goto(url);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    if (!res || res.status() >= 400) problems.push(`${name}: status ${res?.status() ?? "none"} at ${url}`);
+    const overflow = await sidewaysOverflow(page);
+    if (overflow > 0) problems.push(`${name} at ${width}px scrolls sideways by ${overflow}px`);
+    if (out) await page.screenshot({ path: `${out}/${name}-${width}.png`, fullPage: true });
+  }
+  page.off("pageerror", onError);
+  for (const e of errors) problems.push(`${name}: page error: ${e}`);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  return problems;
 }

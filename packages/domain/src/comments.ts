@@ -20,7 +20,28 @@ export class CommentError extends Error {
   }
 }
 
+export const COMMENT_KINDS = ["NOTE", "X", "LINE"] as const;
+export type CommentKind = (typeof COMMENT_KINDS)[number];
+export const COMMENT_KIND_LABELS: Record<CommentKind, string> = { NOTE: "פתק", X: "סימון X", LINE: "קו" };
+
+export type CommentPoints = [number, number][];
+
 const inUnit = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1;
+
+const MIN_SIDE = 0.004;
+
+/** A line is two points on the page; its anchor is the box around them (a hair of size, so it is never empty). */
+export function lineAnchor(points: CommentPoints, versionNumber: number, page: number): CommentAnchor {
+  if (points.length !== 2 || points.some((p) => p.length !== 2 || !inUnit(p[0]) || !inUnit(p[1])))
+    throw new CommentError("INVALID_ANCHOR", "הקו חייב להיות בתוך הדף");
+  const x = Math.min(points[0]![0], points[1]![0]);
+  const y = Math.min(points[0]![1], points[1]![1]);
+  const width = Math.max(Math.abs(points[0]![0] - points[1]![0]), MIN_SIDE);
+  const height = Math.max(Math.abs(points[0]![1] - points[1]![1]), MIN_SIDE);
+  return { versionNumber, page, x: Math.min(x, 1 - width), y: Math.min(y, 1 - height), width, height };
+}
+
+export const isColor = (c: string | null | undefined): c is string => !!c && /^#[0-9a-fA-F]{6}$/.test(c);
 
 export function validateAnchor(anchor: CommentAnchor, pageCount: number, latestVersion: number): void {
   const { versionNumber, page, x, y, width, height } = anchor;
@@ -40,44 +61,34 @@ export function validateAnchor(anchor: CommentAnchor, pageCount: number, latestV
 }
 
 const ALLOWED: Record<CommentStatus, readonly CommentStatus[]> = {
-  OPEN: ["NEEDS_CLARIFICATION", "RESOLVED_FIXED", "RESOLVED_NO_CHANGE"],
-  NEEDS_CLARIFICATION: ["OPEN", "RESOLVED_FIXED", "RESOLVED_NO_CHANGE"],
+  OPEN: ["RESOLVED_FIXED", "RESOLVED_NO_CHANGE"],
+  NEEDS_CLARIFICATION: ["OPEN", "RESOLVED_FIXED", "RESOLVED_NO_CHANGE"], // legacy, unused
   RESOLVED_FIXED: ["OPEN"],
   RESOLVED_NO_CHANGE: ["OPEN"],
 };
 
 export interface StatusChange {
   to: CommentStatus;
-  /** What was fixed, why no change is needed, or what needs clarifying. */
+  /** What was fixed, or why the comment is not accepted. Required for "not accepted". */
   note?: string;
-  /** Required for RESOLVED_FIXED: the version that carries the fix. */
-  fixedInVersion?: number;
 }
 
 /**
- * Validates a comment status change. Who may make it is checked by
- * canOnLetter(..., "SET_COMMENT_STATUS"); this checks the change itself.
+ * Validates a comment status change. Who may make it is checked in access.ts
+ * (the advisor answers; the author or the control manager can reopen).
  */
-export function validateStatusChange(
-  from: CommentStatus,
-  change: StatusChange,
-  opts: { commentVersion: number; latestVersion: number },
-): void {
+export function validateStatusChange(from: CommentStatus, change: StatusChange): void {
   if (!ALLOWED[from].includes(change.to))
     throw new CommentError("INVALID_STATUS_CHANGE", `Cannot move a comment from ${from} to ${change.to}`);
-  const note = change.note?.trim();
-  if ((change.to === "RESOLVED_NO_CHANGE" || change.to === "NEEDS_CLARIFICATION") && !note)
-    throw new CommentError("NOTE_REQUIRED", "Explain the answer in a note");
-  if (change.to === "RESOLVED_FIXED") {
-    const v = change.fixedInVersion;
-    if (v === undefined || !Number.isInteger(v) || v < opts.commentVersion || v > opts.latestVersion)
-      throw new CommentError("VERSION_REQUIRED", "Choose the version that carries the fix");
-  }
+  if (change.to === "RESOLVED_NO_CHANGE" && !change.note?.trim())
+    throw new CommentError("NOTE_REQUIRED", "צריך להסביר למה ההערה לא מתקבלת");
 }
 
 export const COMMENT_STATUS_LABELS: Record<CommentStatus, string> = {
   OPEN: "פתוחה",
-  NEEDS_CLARIFICATION: "ממתינה להבהרה",
+  NEEDS_CLARIFICATION: "פתוחה",
   RESOLVED_FIXED: "טופלה",
-  RESOLVED_NO_CHANGE: "נענתה ללא שינוי",
+  RESOLVED_NO_CHANGE: "לא מקובלת",
 };
+
+export const isOpenComment = (status: CommentStatus) => status === "OPEN" || status === "NEEDS_CLARIFICATION";

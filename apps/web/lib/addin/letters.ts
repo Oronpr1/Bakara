@@ -1,6 +1,6 @@
 import { getDb, schema, type Db } from "@al/db";
-import { canOnLetter, isOpenComment, STAGE_LABELS, type Actor, type Stage } from "@al/domain";
-import { asc, eq, isNotNull } from "drizzle-orm";
+import { abilities, isOpenComment, STATE_LABELS, type Actor, type Phase } from "@al/domain";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { AppError, notFound } from "../errors";
 import { getGraphClient, graphConfigured } from "../m365/config";
 import { getFileStore } from "../storage";
@@ -81,7 +81,9 @@ export interface AddinLetter {
   campus: string;
   faculty: string;
   seasonName: string;
-  stage: Stage;
+  /** The letter's phase (DRAFT, REVIEW, ACADEMIC, FINAL, APPROVED). */
+  stage: Phase;
+  /** The one-line status people read, e.g. "בתיקון". */
   stageLabel: string;
   latestVersion: number;
   openComments: AddinComment[];
@@ -91,8 +93,9 @@ export interface AddinLetter {
 
 /** What the task pane shows for one letter. Letters the actor may not view are "not found". */
 export async function letterForAddin(actor: Actor, letterId: string, db: Db = getDb()): Promise<AddinLetter> {
-  const { row, state } = await loadLetter(db, letterId);
-  if (!canOnLetter(actor, "VIEW", state)) throw notFound();
+  const { row, input } = await loadLetter(db, letterId);
+  const ab = abilities(actor, input);
+  if (!ab.view) throw notFound();
   const [season] = await db.select({ name: seasons.name }).from(seasons).where(eq(seasons.id, row.seasonId));
   const commentRows = await db
     .select({
@@ -102,12 +105,13 @@ export async function letterForAddin(actor: Actor, letterId: string, db: Db = ge
       page: comments.page,
       versionNumber: comments.versionNumber,
       status: comments.status,
+      kind: comments.kind,
       snapshotKey: comments.snapshotKey,
       createdAt: comments.createdAt,
     })
     .from(comments)
     .innerJoin(users, eq(users.id, comments.authorId))
-    .where(eq(comments.letterId, letterId))
+    .where(and(eq(comments.letterId, letterId), isNotNull(comments.publishedAt)))
     .orderBy(asc(comments.page), asc(comments.createdAt));
 
   return {
@@ -117,23 +121,27 @@ export async function letterForAddin(actor: Actor, letterId: string, db: Db = ge
     campus: row.campus,
     faculty: row.faculty,
     seasonName: season?.name ?? "",
-    stage: row.stage,
-    stageLabel: STAGE_LABELS[row.stage],
+    stage: row.phase,
+    stageLabel: STATE_LABELS[ab.flow.state],
     latestVersion: row.latestVersion,
     openComments: commentRows
       .filter((c) => isOpenComment(c.status))
       .map((c) => ({
         id: c.id,
         authorName: c.authorName,
-        body: c.body,
+        body: c.body || (c.kind === "X" ? "סימון X על המסמך" : c.kind === "LINE" ? "קו על המסמך" : c.body),
         page: c.page,
         versionNumber: c.versionNumber,
         status: c.status as AddinComment["status"],
         hasSnapshot: c.snapshotKey !== null,
         createdAt: c.createdAt.toISOString(),
       })),
-    canUpload: canOnLetter(actor, "UPLOAD_VERSION", state),
-    canSubmit: canOnLetter(actor, "SUBMIT_FOR_REVIEW", state),
+    canUpload: ab.uploadVersion,
+    // "Save and submit" saves the version first, so a draft with no version yet still offers it; and a
+    // letter being fixed offers it (it sends the fixes back).
+    canSubmit:
+      ab.uploadVersion &&
+      (ab.flow.phase === "DRAFT" ? ab.flow.blockers.every((b) => b === "NO_VERSION") : ab.flow.fixing),
   };
 }
 
@@ -144,8 +152,8 @@ export async function commentSnapshot(actor: Actor, commentId: string, db: Db = 
     .from(comments)
     .where(eq(comments.id, commentId));
   if (!comment) throw notFound();
-  const { state } = await loadLetter(db, comment.letterId);
-  if (!canOnLetter(actor, "VIEW", state) || !comment.snapshotKey) throw notFound();
+  const { input } = await loadLetter(db, comment.letterId);
+  if (!abilities(actor, input).view || !comment.snapshotKey) throw notFound();
   return getFileStore().get(comment.snapshotKey);
 }
 

@@ -1,7 +1,7 @@
 // The letter's working DOCX in SharePoint: creating it for "Edit in Word", checking whether it
 // changed since the last version, and turning it into an official version on the server.
 import { getDb, schema, type Db } from "@al/db";
-import { canOnLetter, type Actor } from "@al/domain";
+import { abilities, type Actor } from "@al/domain";
 import { and, eq } from "drizzle-orm";
 import { AppError, forbidden } from "../errors";
 import { getDocumentHost } from "../m365/config";
@@ -51,8 +51,8 @@ const refOf = (row: LetterRow): LiveDocRef | null =>
 export async function openInWord(actor: Actor, letterId: string, opts: Opts = {}): Promise<{ url: string; created: boolean }> {
   const host = hostOf(opts);
   const db = opts.db ?? getDb();
-  const { row, state } = await loadLetter(db, letterId);
-  if (!canOnLetter(actor, "UPLOAD_VERSION", state)) throw forbidden();
+  const { row, input } = await loadLetter(db, letterId);
+  if (!abilities(actor, input).uploadVersion) throw forbidden();
   if (row.sharepointWebUrl) return { url: wordDesktopUrl(row.sharepointWebUrl), created: false };
 
   const [season] = await db.select({ name: seasons.name }).from(seasons).where(eq(seasons.id, row.seasonId));
@@ -63,7 +63,8 @@ export async function openInWord(actor: Actor, letterId: string, opts: Opts = {}
         .from(versions)
         .where(and(eq(versions.letterId, letterId), eq(versions.number, row.latestVersion)))
     : [];
-  const docx = latest ? await getFileStore().get(latest.docxKey) : emptyLetterDocx();
+  // The latest version may be a PDF alone; then the working file starts from the empty letter.
+  const docx = latest?.docxKey ? await getFileStore().get(latest.docxKey) : emptyLetterDocx();
 
   // A file already at the letter's path comes from an earlier attempt that did not finish
   // (or a second click racing this one); link it rather than fail. Its content is unknown,
@@ -135,8 +136,8 @@ export async function liveFileStatus(row: LetterRow, opts: Pick<Opts, "host"> = 
 export async function versionFromSharePoint(actor: Actor, letterId: string, note: string | undefined, opts: Opts = {}) {
   const host = hostOf(opts);
   const db = opts.db ?? getDb();
-  const { row, state } = await loadLetter(db, letterId);
-  if (!canOnLetter(actor, "UPLOAD_VERSION", state)) throw forbidden();
+  const { row, input } = await loadLetter(db, letterId);
+  if (!abilities(actor, input).uploadVersion) throw forbidden();
   const ref = refOf(row);
   if (!ref) throw new AppError("INVALID", "למכתב הזה עדיין אין קובץ Word ב-SharePoint");
 

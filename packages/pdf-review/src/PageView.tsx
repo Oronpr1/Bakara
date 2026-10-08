@@ -1,6 +1,6 @@
 "use client";
-import { memo, useEffect, useRef, type PointerEventHandler, type ReactNode } from "react";
-import { renderPageCanvas, type PDFDocumentProxy } from "./pdf";
+import { memo, useEffect, useRef, type MouseEventHandler, type PointerEventHandler, type ReactNode } from "react";
+import { releaseCanvas, renderPageCanvas, type PDFDocumentProxy } from "./pdf";
 
 export interface PageViewProps {
   doc: PDFDocumentProxy;
@@ -17,6 +17,7 @@ export interface PageViewProps {
   priority: number;
   drawing: boolean;
   onPointerDown?: PointerEventHandler<HTMLDivElement>;
+  onClick?: MouseEventHandler<HTMLDivElement>;
   children?: ReactNode;
 }
 
@@ -36,12 +37,21 @@ export const PageView = memo(function PageView(props: PageViewProps) {
     paintedScale.current = null;
   }, [doc]);
 
+  // Leaving: give the bitmap back now (iOS Safari caps the total of live canvases).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    return () => {
+      releaseCanvas(canvas);
+      paintedScale.current = null;
+      if (canvas) delete canvas.dataset.rendered;
+    };
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (!render) {
-      canvas.width = 0;
-      canvas.height = 0;
+      releaseCanvas(canvas);
       paintedScale.current = null;
       delete canvas.dataset.rendered;
       return;
@@ -53,7 +63,7 @@ export const PageView = memo(function PageView(props: PageViewProps) {
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
       canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
-      bitmap.width = 0; // free the off-screen copy now rather than at GC
+      releaseCanvas(bitmap); // free the off-screen copy now rather than at GC
       paintedScale.current = rasterScale;
       canvas.dataset.rendered = "true";
     });
@@ -69,7 +79,12 @@ export const PageView = memo(function PageView(props: PageViewProps) {
       style={{ left: props.left, top: props.top, width: props.width, height: props.height }}
     >
       <canvas ref={canvasRef} className="alpr-canvas" aria-hidden="true" />
-      <div className="alpr-overlay" data-drawing={props.drawing || undefined} onPointerDown={props.onPointerDown}>
+      <div
+        className="alpr-overlay"
+        data-drawing={props.drawing || undefined}
+        onPointerDown={props.onPointerDown}
+        onClick={props.onClick}
+      >
         {props.children}
       </div>
     </div>

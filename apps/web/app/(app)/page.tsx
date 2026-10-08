@@ -1,112 +1,189 @@
-import { CalendarX2, ChevronLeft, CircleCheckBig, FilePen, type LucideIcon, MessageSquareWarning, ScanSearch, ShieldCheck, Stamp, UserPlus } from "lucide-react";
+// The home screen, shaped by role: the control manager's tower ("מגדל פיקוח"), the advisor's
+// "המכתבים שלי", the reviewers' "ממתין לי". On top, a dashboard of the person's own letters; below,
+// the letters themselves with filters kept in the address. No rules here: everything comes ready
+// from the shared queries (who holds a letter, for how long, what the actor may do).
+import { canGlobal } from "@al/domain";
+import { CalendarRange, Download, FileInput, Settings } from "lucide-react";
 import Link from "next/link";
 import { EmptyState } from "@/components/EmptyState";
-import { StagePill, Tag } from "@/components/Pills";
-import { sectionTitle } from "@/components/ui";
+import { Tag } from "@/components/Pills";
+import { btnSecondary } from "@/components/ui";
+import { PersonalTiles, ProgressBar, StatusSummary } from "@/components/home/Dashboard";
+import { FilterBar } from "@/components/home/FilterBar";
+import { LetterList } from "@/components/home/LetterList";
+import { ListEmpty } from "@/components/home/ListEmpty";
+import { letters as lettersText } from "@/components/home/meta";
+import { Attention, Holders } from "@/components/home/Tower";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
-import { formatDate } from "@/lib/format";
-import { QUEUE_REASON_LABELS, type QueueReason, workQueue } from "@/lib/letters/queries";
+import {
+  applyFilters,
+  defaultGroup,
+  filterOptions,
+  filterQuery,
+  GROUP_TITLES,
+  type HomeLetter,
+  parseFilters,
+  personaOf,
+  personalGroups,
+  sortItems,
+} from "@/lib/home/model";
+import { getHomeView } from "@/lib/home/queries";
 import { currentSeason } from "@/lib/season-context";
 
 export const metadata = { title: "העבודה שלי · מכתבי קבלה" };
 
-const REASON_ICONS: Record<QueueReason, LucideIcon> = {
-  APPROVE: Stamp,
-  INITIAL_REVIEW: ScanSearch,
-  FINAL_REVIEW: ShieldCheck,
-  DRAFT: FilePen,
-  OPEN_COMMENTS: MessageSquareWarning,
-  CHOOSE_ACADEMIC: UserPlus,
-};
+/** "קמפוס אונו · מנהל עסקים", or "קמפוסים חרדיים (4 פקולטות)" when there are several. */
+function scopeText(items: HomeLetter[]): string {
+  const campuses = new Map<string, Set<string>>();
+  for (const l of items) campuses.set(l.campus, (campuses.get(l.campus) ?? new Set()).add(l.faculty));
+  const parts = [...campuses].map(([c, f]) => (f.size === 1 ? `${c} · ${[...f][0]}` : `${c} (${f.size} פקולטות)`));
+  return parts.length > 2 ? `${parts.slice(0, 2).join(", ")} ועוד ${parts.length - 2}` : parts.join(", ");
+}
 
-export default async function HomePage() {
+const firstName = (name: string) => name.split(/\s+/)[0] ?? name;
+
+export default async function HomePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
+  const actor = actorOf(user);
   const { current } = await currentSeason();
-  const groups = await workQueue(actorOf(user), current?.id);
-  const total = groups.reduce((n, g) => n + g.items.length, 0);
+
+  if (!current)
+    return (
+      <EmptyState
+        as="h1"
+        icon={CalendarRange}
+        title="עדיין לא נפתחה עונת רישום"
+        action={
+          canGlobal(actor, "MANAGE_SEASONS") ? (
+            <Link href="/seasons" className={btnSecondary}>
+              פתיחת עונה
+            </Link>
+          ) : undefined
+        }
+      >
+        {canGlobal(actor, "MANAGE_SEASONS")
+          ? "פותחים עונה (אפשר על בסיס עונה קודמת), ואז מקימים בה את המסלולים שצריכים מכתב."
+          : "כשוורוניקה תפתח את העונה, המכתבים שלך יופיעו כאן."}
+      </EmptyState>
+    );
+
+  const [view, params] = await Promise.all([getHomeView(actor, current.id), searchParams]);
+  const all = view.letters;
+  const me = user.id;
+  const persona = personaOf(user.roles, me, all);
+  const filters = parseFilters(params);
+  const group = filters.g ?? defaultGroup(persona);
+  // A registration manager who is also the advisor of every letter in the unit (שולי) needs no
+  // second, unit-wide summary: her own tiles already say it all.
+  const unitSummary = persona.control || persona.vp || (persona.rm && (!persona.advisor || all.some((l) => !l.advisorIds.includes(me))));  const shown = sortItems(applyFilters(all, filters, me, group), filters.sort);
+  const personal = personalGroups(persona);
+  const canImport = canGlobal(actor, "MANAGE_UNITS");
+  const holderIndex = filters.holder ? all.find((l) => l.holderIds.includes(filters.holder!)) : undefined;
+  const holderName = holderIndex ? holderIndex.holderNames[holderIndex.holderIds.indexOf(filters.holder!)] : undefined;
+
+  const title = persona.control ? "מגדל פיקוח" : persona.advisor ? "המכתבים שלי" : "ממתין לי";
+  const scope = persona.control || persona.vp ? `${lettersText(all.length)} בעונה` : scopeText(all);
 
   return (
-    <div className="flex flex-col gap-8">
-      <section className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold">שלום {user.name}</h1>
-        <p className="text-muted">
-          {total === 0 ? "אין כרגע מכתבים שממתינים לך." : total === 1 ? "מכתב אחד ממתין לך." : `${total} מכתבים ממתינים לך.`}
-        </p>
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-accent">
+            <CalendarRange aria-hidden className="size-4" />
+            {view.season.name}
+            {view.season.status === "ARCHIVED" && <Tag>בארכיון</Tag>}
+          </p>
+          <h1 className="text-2xl font-bold sm:text-3xl">{title}</h1>
+          <p className="text-muted">
+            שלום {firstName(user.name)}
+            {scope && <> · {scope}</>}
+          </p>
+        </div>
+        {persona.control && (
+          <nav aria-label="פעולות ניהול" className="flex flex-wrap gap-2">
+            {canImport && (
+              <Link href={`/seasons/${view.season.id}/import`} className={btnSecondary}>
+                <FileInput aria-hidden className="size-4" />
+                ייבוא מסלולים
+              </Link>
+            )}
+            <Link href="/settings" className={btnSecondary}>
+              <Settings aria-hidden className="size-4" />
+              הגדרות
+            </Link>
+          </nav>
+        )}
+      </header>
+
+      {/* The person's own dashboard: how many letters, and where they stand. */}
+      {/* With no letters at all, the empty list below explains what comes next; zero tiles would only add noise. */}
+      <section aria-label="תמונת מצב" className={`flex flex-col gap-4 ${all.length === 0 ? "hidden" : ""}`}>
+        {personal.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {unitSummary && <h2 className="text-sm font-bold text-muted">שלך</h2>}
+            <PersonalTiles groups={personal} items={all} me={me} filters={filters} current={group} />
+          </div>
+        )}
+        {unitSummary ? (
+          <StatusSummary
+            items={all}
+            label="מכתבים"
+            filters={filters}
+            current={group}
+            title={persona.control || persona.vp ? "כל המכתבים בעונה" : "המכתבים ביחידה שלך"}
+            foldOnPhone={!persona.control}
+          />
+        ) : (
+          all.length > 0 && (
+            <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
+              <ProgressBar items={all} label="המכתבים שלך" />
+            </div>
+          )
+        )}
       </section>
 
-      {total === 0 && (
-        <EmptyState
-          icon={CircleCheckBig}
-          tone="good"
-          title="הכול מטופל"
-        >
-          כשמכתב יחכה לך (לבדיקה, לאישור או לטיפול בהערות) הוא יופיע כאן, ותקבלו גם מייל.
-        </EmptyState>
+      {persona.control && view.tower && (
+        <div className="grid items-start gap-4 lg:grid-cols-[3fr_2fr]">
+          <Holders tower={view.tower} items={all} me={me} seasonId={view.season.id} filters={filters} />
+          <Attention tower={view.tower} items={all} filters={filters} />
+        </div>
       )}
 
-      {groups.map(({ season, items }) => (
-        <section key={season.id} aria-labelledby={`q-${season.id}`} className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <h2 id={`q-${season.id}`} className={sectionTitle}>
-              {season.name} <span className="tabular text-base font-normal text-muted">· {items.length}</span>
-            </h2>
-            <Link href={`/seasons/${season.id}`} className="inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-accent hover:underline">
-              לכל המכתבים בעונה
-              <ChevronLeft aria-hidden className="size-4" />
-            </Link>
+      <section id="letters" aria-labelledby="letters-h" className="flex scroll-mt-4 flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <h2 id="letters-h" className="text-lg font-bold">
+            {GROUP_TITLES[group]}
+            <span className="tabular text-base font-normal text-muted" role="status">
+              {" "}
+              · {shown.length}
+              {shown.length !== all.length && <> מתוך {all.length}</>}
+            </span>
+          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            {group !== "all" && (
+              <Link href={`/${filterQuery(filters, { g: "all" })}#letters`} className="inline-flex min-h-11 items-center rounded-md px-2 text-sm font-semibold text-accent hover:bg-accent-soft">
+                כל המכתבים ({all.length})
+              </Link>
+            )}
+            {shown.length > 0 && (
+              <a href={`/season/export${filterQuery({ ...filters, g: group })}`} className={btnSecondary} download>
+                <Download aria-hidden className="size-4" />
+                ייצוא לאקסל
+              </a>
+            )}
           </div>
-          <ul className="flex flex-col gap-2">
-            {items.map(({ row, reason, overdue, openComments }) => {
-              const Icon = REASON_ICONS[reason];
-              return (
-                <li key={row.id}>
-                  <Link
-                    href={`/letters/${row.id}`}
-                    className="group flex items-start gap-3 rounded-xl border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-accent/60 hover:bg-surface-2 sm:items-center"
-                  >
-                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-                      <Icon aria-hidden className="size-5" />
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                      <span className="flex min-w-0 flex-col">
-                        <span className="font-bold text-fg">{QUEUE_REASON_LABELS[reason]}</span>
-                        <span className="text-sm">
-                          <span className="font-semibold">{row.trackName}</span>{" "}
-                          <span className="tabular text-muted">({row.trackNumber})</span>
-                          <span className="text-muted">
-                            {" "}
-                            · {row.campus} · {row.faculty}
-                          </span>
-                        </span>
-                      </span>
-                      <span className="flex flex-wrap items-center gap-1.5">
-                        <StagePill stage={row.stage} />
-                        {openComments > 0 && (
-                          <Tag tone="warn" icon={MessageSquareWarning}>
-                            <span className="tabular">{openComments}</span> הערות פתוחות
-                          </Tag>
-                        )}
-                        {row.dueDate &&
-                          (overdue ? (
-                            <Tag tone="bad" icon={CalendarX2}>
-                              באיחור · <span className="tabular">{formatDate(row.dueDate)}</span>
-                            </Tag>
-                          ) : (
-                            <Tag>
-                              יעד <span className="tabular">{formatDate(row.dueDate)}</span>
-                            </Tag>
-                          ))}
-                      </span>
-                    </span>
-                    <ChevronLeft aria-hidden className="mt-2.5 size-5 text-muted transition-transform duration-150 group-hover:-translate-x-0.5 sm:mt-0" />
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+        </div>
+        {all.length > 0 && <FilterBar filters={filters} options={filterOptions(all)} byPeople={persona.control} holderName={holderName} />}
+        <LetterList
+          items={shown}
+          canRemind={persona.control}
+          showManager={persona.control}
+          showAdvisor={persona.control || persona.vp || all.some((l) => l.advisorId !== me)}
+          me={me}
+          empty={<ListEmpty group={group} filters={filters} persona={persona} total={all.length} canImport={canImport} seasonId={view.season.id} />}
+        />
+      </section>
     </div>
   );
 }

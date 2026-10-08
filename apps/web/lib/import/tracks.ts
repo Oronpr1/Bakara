@@ -1,5 +1,5 @@
 // Importing tracks (דרישות מכתב) from a spreadsheet: track name, track number, faculty, campus,
-// control advisor. Pure parsing here; the database lookups are in service.ts.
+// control advisor and registration manager (the last two optional). Pure parsing here; the database lookups are in service.ts.
 
 export interface TrackRow {
   line: number; // 1-based line in the file, header included
@@ -7,10 +7,11 @@ export interface TrackRow {
   trackNumber: string;
   faculty: string;
   campus: string;
-  advisor: string; // name or email as written in the file; empty = the advisor set for the campus + faculty
+  advisor: string; // name or email as written in the file; empty = to be assigned later in the settings
+  manager: string; // the same for the registration manager
 }
 
-export type Column = "trackName" | "trackNumber" | "faculty" | "campus" | "advisor";
+export type Column = "trackName" | "trackNumber" | "faculty" | "campus" | "advisor" | "manager";
 
 const HEADERS: Record<Column, string[]> = {
   trackName: ["שם מסלול", "שם המסלול", "מסלול", "track", "track name"],
@@ -18,6 +19,7 @@ const HEADERS: Record<Column, string[]> = {
   faculty: ["פקולטה", "faculty"],
   campus: ["קמפוס", "campus"],
   advisor: ["יועץ בקרה", "יועצת בקרה", "יועץ/ת בקרה", "יועץ", "יועצת", "advisor", "email", "מייל יועץ"],
+  manager: ["מנהל רישום", "מנהלת רישום", "מנהל/ת רישום", "מנהל מחלקת רישום", "registration manager", "manager", "מייל מנהל רישום"],
 };
 
 const clean = (v: unknown) =>
@@ -37,8 +39,9 @@ export function mapColumns(header: unknown[]): Record<Column, number | undefined
     const i = cells.findIndex((c) => names.includes(c));
     if (i >= 0) map[col] = i;
   }
-  // The advisor column is optional: without it every row gets the advisor set for its campus + faculty.
-  const missing = (Object.keys(HEADERS) as Column[]).filter((c) => c !== "advisor" && map[c] === undefined);
+  // The advisor and manager columns are optional: without them the tracks are created unassigned,
+  // and the control manager assigns people in the settings.
+  const missing = (Object.keys(HEADERS) as Column[]).filter((c) => c !== "advisor" && c !== "manager" && map[c] === undefined);
   return missing.length ? { missing } : (map as Record<Column, number | undefined>);
 }
 
@@ -48,6 +51,7 @@ export const COLUMN_LABELS: Record<Column, string> = {
   faculty: "פקולטה",
   campus: "קמפוס",
   advisor: "יועץ בקרה",
+  manager: "מנהל רישום",
 };
 
 /** Turns spreadsheet rows (first row = header) into track rows. Blank rows are dropped. */
@@ -67,8 +71,9 @@ export function parseTrackRows(rows: unknown[][]): { rows: TrackRow[] } | { erro
       faculty: at(r, cols.faculty),
       campus: at(r, cols.campus),
       advisor: at(r, cols.advisor),
+      manager: at(r, cols.manager),
     };
-    if ([row.trackName, row.trackNumber, row.faculty, row.campus, row.advisor].every((v) => !v)) return;
+    if ([row.trackName, row.trackNumber, row.faculty, row.campus, row.advisor, row.manager].every((v) => !v)) return;
     out.push(row);
   });
   if (out.length === 0) return { error: "לא נמצאו שורות מתחת לכותרת" };

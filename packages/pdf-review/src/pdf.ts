@@ -148,11 +148,39 @@ export function renderPageCanvas(
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.floor(viewport.width));
     canvas.height = Math.max(1, Math.floor(viewport.height));
-    const task = page.render({ canvas, viewport });
-    ctx.onCancel(() => task.cancel());
-    await task.promise;
-    return canvas;
+    return paintOrRelease(canvas, page.render({ canvas, viewport }), ctx);
   });
+}
+
+/**
+ * Await a pdf.js render into `canvas`; if it fails or was cancelled, free the
+ * canvas's backing store at once (iOS Safari counts every live canvas against
+ * a small total, and does not give it back until GC).
+ */
+async function paintOrRelease(
+  canvas: HTMLCanvasElement,
+  task: { promise: Promise<unknown>; cancel(): void },
+  ctx: { readonly cancelled: boolean; onCancel(fn: () => void): void },
+): Promise<HTMLCanvasElement> {
+  ctx.onCancel(() => task.cancel());
+  try {
+    await task.promise;
+  } catch (err) {
+    releaseCanvas(canvas);
+    throw err;
+  }
+  if (ctx.cancelled) {
+    releaseCanvas(canvas);
+    throw new Error("cancelled");
+  }
+  return canvas;
+}
+
+/** Drop a canvas's pixels now rather than at garbage collection. */
+export function releaseCanvas(canvas: HTMLCanvasElement | null | undefined): void {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
 }
 
 export interface SnapshotOptions {
@@ -162,6 +190,11 @@ export interface SnapshotOptions {
   outline?: string | false;
   /** Image type; default "image/png". */
   type?: string;
+  /**
+   * Draw this mark instead of a plain outline: an X across the area, or the
+   * line through `points` (fractions of the page). The colour is `outline`'s.
+   */
+  mark?: { kind: "NOTE" | "X" | "LINE"; points?: ReadonlyArray<{ x: number; y: number }> | null };
 }
 
 /** The anchor fields a snapshot needs; @al/domain's CommentAnchor fits. */
@@ -196,17 +229,38 @@ export async function renderRegionSnapshot(
   if (outline) {
     const g = canvas.getContext("2d")!;
     const lw = Math.max(2, Math.round(s));
+    const px = (x: number) => x * full.width - crop.left;
+    const py = (y: number) => y * full.height - crop.top;
     g.strokeStyle = outline;
     g.lineWidth = lw;
-    g.strokeRect(
-      anchor.x * full.width - crop.left - lw / 2,
-      anchor.y * full.height - crop.top - lw / 2,
-      anchor.width * full.width + lw,
-      anchor.height * full.height + lw,
-    );
+    g.lineCap = "round";
+    const kind = options.mark?.kind;
+    const pts = options.mark?.points;
+    if (kind === "LINE" && pts && pts.length >= 2) {
+      g.lineWidth = lw * 1.5;
+      g.beginPath();
+      g.moveTo(px(pts[0]!.x), py(pts[0]!.y));
+      for (const p of pts.slice(1)) g.lineTo(px(p.x), py(p.y));
+      g.stroke();
+    } else if (kind === "X") {
+      g.lineWidth = lw * 1.5;
+      const [x1, y1, x2, y2] = [px(anchor.x), py(anchor.y), px(anchor.x + anchor.width), py(anchor.y + anchor.height)];
+      g.beginPath();
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+      g.moveTo(x2, y1);
+      g.lineTo(x1, y2);
+      g.stroke();
+    } else {
+      g.strokeRect(px(anchor.x) - lw / 2, py(anchor.y) - lw / 2, anchor.width * full.width + lw, anchor.height * full.height + lw);
+    }
   }
 
   return new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("snapshot encoding failed"))), type),
+    canvas.toBlob((b) => {
+      releaseCanvas(canvas);
+      if (b) resolve(b);
+      else reject(new Error("snapshot encoding failed"));
+    }, type),
   );
 }

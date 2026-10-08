@@ -16,13 +16,16 @@ function initials(name: string) {
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const { current, seasons } = await currentSeason();
-  const nav = [
-    { href: "/", label: "העבודה שלי", icon: "home" as const },
-    { href: "/season", label: "מכתבי העונה", icon: "seasons" as const },
-    ...(canGlobal(actorOf(user), "MANAGE_UNITS") ? [{ href: "/admin/units", label: "קמפוסים ופקולטות", icon: "units" as const }] : []),
-    ...(canGlobal(actorOf(user), "MANAGE_USERS") ? [{ href: "/admin/users", label: "משתמשים", icon: "users" as const }] : []),
-    ...(canGlobal(actorOf(user), "MANAGE_SEASONS") ? [{ href: "/seasons", label: "הגדרות עונות", icon: "settings" as const }] : []),
-  ];
+  const actor = actorOf(user);
+  const linkOnly = Boolean(user.linkLetterId); // opened from a personal email link: one letter, no menu
+  const homeLabel = actor.roles.includes("CONTROL_MANAGER") ? "מגדל פיקוח" : actor.roles.some((r) => r === "VP_REGISTRATION" || r === "REGISTRATION_MANAGER") ? "ממתין לי" : "המכתבים שלי";
+  const manage = canGlobal(actor, "MANAGE_UNITS") || canGlobal(actor, "MANAGE_USERS") || canGlobal(actor, "MANAGE_SEASONS");
+  const nav = linkOnly
+    ? []
+    : [
+        { href: "/", label: homeLabel, icon: "home" as const },
+        ...(manage ? [{ href: "/settings", label: "הגדרות", icon: "settings" as const }] : []),
+      ];
   const roles = user.roles.map((r) => ROLE_LABELS[r]).join(", ");
   return (
     <div className="flex min-h-dvh flex-col">
@@ -33,15 +36,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         דלג לתוכן
       </a>
       <header className="bg-brand text-brand-fg">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 pt-3">
-          <Link href="/" className="flex items-center gap-2.5 rounded-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 pt-3 sm:gap-4">
+          <Link href="/" className="flex shrink-0 items-center gap-2.5 rounded-md">
             <span className="grid size-8 place-items-center rounded-md bg-brand-fg/15">
               <Mail aria-hidden className="size-4" />
             </span>
             <span className="text-lg font-bold">מכתבי קבלה</span>
           </Link>
-          <div className="flex items-center gap-3">
-            {current && (
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            {current && !linkOnly && (
               <SeasonSwitcher
                 seasons={seasons.map((s) => ({ id: s.id, name: s.name, archived: s.status === "ARCHIVED" }))}
                 currentId={current.id}
@@ -54,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span
               aria-hidden
               title={`${user.name} · ${roles}`}
-              className="grid size-9 place-items-center rounded-full bg-brand-fg/15 text-sm font-bold"
+              className="hidden size-9 place-items-center rounded-full bg-brand-fg/15 text-sm font-bold sm:grid"
             >
               {initials(user.name)}
             </span>
@@ -69,9 +72,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </form>
           </div>
         </div>
-        <nav aria-label="ניווט ראשי" className="mx-auto max-w-6xl px-2 sm:px-3">
-          <NavLinks items={nav} />
-        </nav>
+        {nav.length > 0 ? (
+          <nav aria-label="ניווט ראשי" className="mx-auto max-w-6xl px-2 sm:px-3">
+            <NavLinks items={nav} />
+          </nav>
+        ) : (
+          <div className="h-3" />
+        )}
       </header>
       <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:py-8">
         {children}

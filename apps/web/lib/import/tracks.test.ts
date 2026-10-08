@@ -11,8 +11,8 @@ describe("track import parsing", () => {
     ]);
     expect(r).toEqual({
       rows: [
-        { line: 2, trackName: "משפטים LLB", trackNumber: "101", faculty: "משפטים", campus: "קריית אונו", advisor: "dana@ono.ac.il" },
-        { line: 4, trackName: "עיצוב פנים", trackNumber: "202", faculty: "עיצוב", campus: "ירושלים", advisor: "רות כהן" },
+        { line: 2, trackName: "משפטים LLB", trackNumber: "101", faculty: "משפטים", campus: "קריית אונו", advisor: "dana@ono.ac.il", manager: "" },
+        { line: 4, trackName: "עיצוב פנים", trackNumber: "202", faculty: "עיצוב", campus: "ירושלים", advisor: "רות כהן", manager: "" },
       ],
     });
   });
@@ -30,7 +30,7 @@ describe("track import parsing", () => {
       ["קמפוס אונו", "משפטים", "LLB", "227111005", 25, "-"],
     ]);
     expect(r).toEqual({
-      rows: [{ line: 2, trackName: "LLB", trackNumber: "227111005", faculty: "משפטים", campus: "קמפוס אונו", advisor: "" }],
+      rows: [{ line: 2, trackName: "LLB", trackNumber: "227111005", faculty: "משפטים", campus: "קמפוס אונו", advisor: "", manager: "" }],
     });
   });
 

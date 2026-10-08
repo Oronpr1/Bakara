@@ -1,9 +1,14 @@
 export {
   PdfReviewViewer,
+  type CreateResult,
+  type DraftPatch,
   type DrawResult,
+  type MarkKind,
+  type MarkPoint,
   type PdfReviewViewerProps,
   type ReviewAnchor,
   type ReviewComment,
+  type ViewerTool,
 } from "./PdfReviewViewer";
 export {
   CSS_UNITS,
@@ -37,3 +42,18 @@ export {
   type Point,
   type Size,
 } from "./geometry";
+export {
+  COLOR_NAMES,
+  DEFAULT_MARK_COLOR,
+  MARK_COLORS,
+  TAP_AREA,
+  lineFromDrag,
+  moveEndpoint,
+  movePoints,
+  moveRect,
+  resizeRect,
+  resolveMarkGesture,
+  tapRectAt,
+  type Corner,
+  type MarkGesture,
+} from "./marks";

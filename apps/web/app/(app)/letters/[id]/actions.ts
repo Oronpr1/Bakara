@@ -1,47 +1,147 @@
 "use server";
 
-import { ACTIONS, COMMENT_STATUSES } from "@al/domain";
+// Thin wrappers around the letter services for the review room. Every rule (who may, when) is
+// checked by the services; these only read the form, call, and refresh the pages that show it.
+import type { SeatKey } from "@al/domain";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { inviteAcademic, reissueLink, removeAcademic } from "@/lib/academic/service";
+import type { ActionResult } from "@/lib/action-result";
+import { formObject, runAction } from "@/lib/actions";
 import { actorOf } from "@/lib/actor";
 import { requireUser } from "@/lib/auth/session";
 import { userMessage } from "@/lib/errors";
-import { inviteAcademic, reissueLink } from "@/lib/academic/service";
-import type { ActionResult } from "@/lib/action-result";
-import { formObject, runAction } from "@/lib/actions";
-import { createComment, replyToComment, setCommentStatus } from "@/lib/letters/comments";
+import { createComment, deleteDraftComment, replyToComment, setCommentStatus, updateDraftComment } from "@/lib/letters/comments";
 import { openInWord, versionFromSharePoint } from "@/lib/letters/live-file";
+import { textMatch } from "@/lib/letters/textmatch";
+import { listUsers } from "@/lib/letters/queries";
 import {
-  addAcademicApprover,
-  approveLetter,
+  addLetterPerson,
   changeAdvisor,
-  performTransition,
-  removeApprover,
-  replaceApprover,
+  decideLetter,
+  markInGilboa,
+  remindHolders,
+  removeLetterPerson,
+  reopenLetter,
+  resetLetterApprovals,
+  resubmitLetter,
+  retractApproval,
+  skipAcademicRound,
+  submitLetter,
   uploadVersion,
 } from "@/lib/letters/service";
+import { composeSuggestion, joinNames, shortName } from "@/lib/room/view";
 
 const letterId = z.uuid();
+const note = z.string().trim().max(2000).optional();
+const seat = z
+  .string()
+  .regex(/^(CONTROL|RM|VP|FINAL|ACADEMIC:[0-9a-f-]{36})$/, { message: "לא ברור על איזה תפקיד ההחלטה" })
+  .transform((s) => s as SeatKey);
 const pick = (what: string) => z.uuid({ message: `צריך לבחור ${what}` });
-const reason = z.string().trim().max(2000).optional();
-/**
- * Revalidating from a server function refreshes the current page in the same response and
- * marks every other visited page (season lists, home) for a refresh on the next visit.
- */
-const paths = (d: { letterId: string }) => [`/letters/${d.letterId}`];
 
-export async function transitionAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+/**
+ * The room itself, the academic's clean page, and the lists that show the letter's state.
+ * Revalidating from a server function refreshes the current page in the same response.
+ */
+const paths = (d: { letterId: string }) => [`/letters/${d.letterId}`, `/a/letter/${d.letterId}`, "/", "/season"];
+
+// ---------------------------------------------------------------- decisions and the flow
+
+export async function decideAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({ letterId, action: z.enum(ACTIONS), reason }),
+    z.object({ letterId, seat, kind: z.enum(["APPROVED", "CHANGES"]), note }),
     formObject(form),
-    (actor, d) => performTransition(actor, d.letterId, d.action, d.reason),
+    (actor, d) => decideLetter(actor, d.letterId, { seat: d.seat, kind: d.kind, note: d.note }),
     paths,
   );
 }
 
-export async function approveAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  return runAction(z.object({ letterId }), formObject(form), (actor, d) => approveLetter(actor, d.letterId), paths);
+export async function submitAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId }), formObject(form), (actor, d) => submitLetter(actor, d.letterId), paths, "נשלח לבדיקה");
 }
+
+export async function resubmitAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ letterId, resendToAcademic: z.literal("on").optional() }),
+    formObject(form),
+    (actor, d) => resubmitLetter(actor, d.letterId, { resendToAcademic: d.resendToAcademic === "on" }),
+    paths,
+    "התיקונים נשלחו",
+  );
+}
+
+export async function retractAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId, seat }), formObject(form), (actor, d) => retractApproval(actor, d.letterId, d.seat), paths, "האישור שלך בוטל");
+}
+
+export async function skipAcademicAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId, note }), formObject(form), (actor, d) => skipAcademicRound(actor, d.letterId, d.note), paths, "דילגנו על הגורם האקדמי");
+}
+
+export async function resetApprovalsAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ letterId, note }),
+    formObject(form),
+    (actor, d) => resetLetterApprovals(actor, d.letterId, d.note),
+    paths,
+    "המכתב חזר לבדיקה. כולם יתבקשו לאשר מחדש",
+  );
+}
+
+export async function reopenAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId, note }), formObject(form), (actor, d) => reopenLetter(actor, d.letterId, d.note), paths, "המכתב נפתח מחדש לאישור סופי");
+}
+
+export async function markInGilboaAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId }), formObject(form), (actor, d) => markInGilboa(actor, d.letterId), paths, "סומן: הועלה לגלבוע");
+}
+
+export async function remindAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  let who: string[] = [];
+  const result = await runAction(
+    z.object({ letterId }),
+    formObject(form),
+    async (actor, d) => {
+      const ids = await remindHolders(actor, d.letterId);
+      const people = new Map((await listUsers()).map((u) => [u.id, u.name]));
+      who = ids.map((id) => shortName(people.get(id)));
+    },
+    paths,
+  );
+  if (result && "ok" in result) return { ok: true, message: who.length ? `נשלחה תזכורת ל${joinNames(who)}` : "אין למי לשלוח תזכורת" };
+  return result;
+}
+
+// ---------------------------------------------------------------- people on the track
+
+export async function changeAdvisorAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId, advisorId: pick("יועצת") }), formObject(form), (actor, d) => changeAdvisor(actor, d.letterId, d.advisorId), paths, "היועצת הוחלפה");
+}
+
+const kind = z.enum(["ADVISOR", "COMMENTER"]);
+
+export async function addPersonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ letterId, userId: pick("אדם"), kind }),
+    formObject(form),
+    (actor, d) => addLetterPerson(actor, d.letterId, d.userId, d.kind),
+    paths,
+    "נוסף למסלול",
+  );
+}
+
+export async function removePersonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(
+    z.object({ letterId, userId: z.uuid(), kind }),
+    formObject(form),
+    (actor, d) => removeLetterPerson(actor, d.letterId, d.userId, d.kind),
+    paths,
+    "הוסר מהמסלול",
+  );
+}
+
+// ---------------------------------------------------------------- versions
 
 const MAX_BYTES = 30 * 1024 * 1024;
 const file = (what: string) =>
@@ -52,33 +152,28 @@ const file = (what: string) =>
 
 export async function uploadVersionAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({ letterId, docx: file("Word"), pdf: file("PDF"), note: z.string().trim().max(2000).optional() }),
+    z.object({ letterId, docx: file("Word").optional(), pdf: file("PDF"), note }),
     formObject(form),
-    async (actor, d) =>
-      uploadVersion(actor, d.letterId, {
-        docx: new Uint8Array(await d.docx.arrayBuffer()),
-        pdf: new Uint8Array(await d.pdf.arrayBuffer()),
-        note: d.note,
-      }),
+    async (actor, d) => {
+      const docx = d.docx ? new Uint8Array(await d.docx.arrayBuffer()) : null;
+      const pdf = new Uint8Array(await d.pdf.arrayBuffer());
+      // With a Word file attached: how much of its text is in the PDF (a PDF of another letter shows up as a low share).
+      const match = docx ? await textMatch(docx, pdf).catch(() => null) : null;
+      return uploadVersion(actor, d.letterId, { docx, pdf, note: d.note, textMatch: match });
+    },
     paths,
     "הגרסה הועלתה",
   );
 }
 
-/** Creates the SharePoint working file the first time; the page then links to Word with it. */
+/** "ערוך ב-Word": creates the SharePoint working file the first time. Only with Microsoft 365. */
 export async function openInWordAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  return runAction(
-    z.object({ letterId }),
-    formObject(form),
-    (actor, d) => openInWord(actor, d.letterId),
-    paths,
-    "הקובץ נוצר ב-SharePoint. אפשר לפתוח אותו ב-Word.",
-  );
+  return runAction(z.object({ letterId }), formObject(form), (actor, d) => openInWord(actor, d.letterId), paths, "הקובץ נוצר. אפשר לפתוח אותו ב-Word.");
 }
 
 export async function versionFromSharePointAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({ letterId, note: z.string().trim().max(2000).optional() }),
+    z.object({ letterId, note }),
     formObject(form),
     (actor, d) => versionFromSharePoint(actor, d.letterId, d.note),
     paths,
@@ -86,85 +181,142 @@ export async function versionFromSharePointAction(_prev: ActionResult, form: For
   );
 }
 
-export async function replaceApproverAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  return runAction(
-    z.object({ letterId, slot: z.enum(["REGISTRATION_MANAGER", "VP_REGISTRATION"]), userId: pick("מחליף") }),
-    formObject(form),
-    (actor, d) => replaceApprover(actor, d.letterId, d.slot, d.userId),
-    paths,
-    "נשמר",
-  );
-}
-
-export async function addAcademicAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  return runAction(
-    z.object({ letterId, userId: pick("גורם אקדמי") }),
-    formObject(form),
-    (actor, d) => addAcademicApprover(actor, d.letterId, d.userId),
-    paths,
-    "נוסף",
-  );
-}
-
-export async function removeApproverAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  return runAction(
-    z.object({
-      letterId,
-      userId: z.uuid(),
-      slot: z.enum(["REGISTRATION_MANAGER", "VP_REGISTRATION", "ACADEMIC"]),
-      reason: z.string({ message: "צריך לכתוב סיבה" }).trim().min(1, { message: "צריך לכתוב סיבה" }).max(2000),
-    }),
-    formObject(form),
-    (actor, d) => removeApprover(actor, d.letterId, d.userId, d.slot, d.reason),
-    paths,
-  );
-}
-
-export async function changeAdvisorAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  return runAction(
-    z.object({ letterId, advisorId: pick("יועצת") }),
-    formObject(form),
-    (actor, d) => changeAdvisor(actor, d.letterId, d.advisorId),
-    paths,
-    "היועצת הוחלפה",
-  );
-}
+// ---------------------------------------------------------------- comments
 
 const unit = z.coerce.number().min(0).max(1);
+const text = (msg: string) => z.string({ message: msg }).trim().min(1, { message: msg }).max(4000);
+
+/** The kinds of marks on the page: a note (text), an X, or a line. An X or a line with no text is a mark only. */
+const MARK_KINDS = ["NOTE", "X", "LINE"] as const;
+type MarkKind = (typeof MARK_KINDS)[number];
+type MarkPoint = { x: number; y: number };
+/** The viewer works with {x, y} points; the service stores [x, y] pairs. */
+const toPairs = (pts?: MarkPoint[]): [number, number][] | undefined => pts?.map((p) => [p.x, p.y] as [number, number]);
+
+const color = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, { message: "צבע לא תקין" })
+  .optional();
+const pointList = z.array(z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })).max(500);
+/** A line's points arrive from the form as JSON text. */
+const pointsJson = z
+  .string()
+  .max(20000)
+  .optional()
+  .transform((s, ctx) => {
+    if (!s) return undefined;
+    const parsed = pointList.safeParse((() => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    })());
+    if (!parsed.success) {
+      ctx.addIssue({ code: "custom", message: "הקו שסומן לא תקין" });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
 
 /** A new comment on a marked area. The snapshot PNG is cut in the browser from the rendered page. */
 export async function createCommentAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({
-      letterId,
-      versionNumber: z.coerce.number().int().min(1),
-      page: z.coerce.number().int().min(1),
-      x: unit,
-      y: unit,
-      width: unit,
-      height: unit,
-      body: z.string({ message: "צריך לכתוב את ההערה" }).trim().min(1, { message: "צריך לכתוב את ההערה" }).max(4000),
-      snapshot: z.instanceof(File).optional(),
-    }),
+    z
+      .object({
+        letterId,
+        versionNumber: z.coerce.number().int().min(1),
+        page: z.coerce.number().int().min(1),
+        x: unit,
+        y: unit,
+        width: unit,
+        height: unit,
+        kind: z.enum(MARK_KINDS).optional(),
+        color,
+        points: pointsJson,
+        body: z.string().trim().max(4000).optional(),
+        from: z.string().max(1500).optional(),
+        to: z.string().max(1500).optional(),
+        snapshot: z.instanceof(File).optional(),
+      })
+      // A note needs its text; an X or a line may stand alone.
+      .refine((d) => d.kind === "X" || d.kind === "LINE" || Boolean(d.body), { message: "צריך לכתוב את ההערה", path: ["body"] }),
     formObject(form),
-    async (actor, d) =>
-      createComment(actor, d.letterId, {
+    async (actor, d) => {
+      const input: Parameters<typeof createComment>[2] = {
         anchor: { versionNumber: d.versionNumber, page: d.page, x: d.x, y: d.y, width: d.width, height: d.height },
-        body: d.body,
+        body: d.body ?? "",
+        suggestion: composeSuggestion(d.from, d.to),
         snapshotPng: d.snapshot && d.snapshot.size > 0 ? new Uint8Array(await d.snapshot.arrayBuffer()) : undefined,
-      }),
+        kind: d.kind,
+        color: d.color,
+        points: toPairs(d.points),
+      };
+      return createComment(actor, d.letterId, input);
+    },
     paths,
-    "ההערה נוספה",
+    "ההערה נשמרה",
   );
+}
+
+export interface DraftPatch {
+  anchor?: { versionNumber: number; page: number; x: number; y: number; width: number; height: number };
+  color?: string;
+  points?: MarkPoint[];
+  body?: string;
+  suggestion?: string;
+}
+
+const draftPatch = z.object({
+  letterId,
+  commentId: z.uuid(),
+  patch: z
+    .object({
+      anchor: z
+        .object({
+          versionNumber: z.number().int().min(1),
+          page: z.number().int().min(1),
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+          width: z.number().min(0).max(1),
+          height: z.number().min(0).max(1),
+        })
+        .optional(),
+      color,
+      points: pointList.optional(),
+      body: z.string().trim().max(4000).optional(),
+      suggestion: z.string().trim().max(3100).optional(),
+    })
+    .strict(),
+});
+
+/**
+ * Edits one of my draft marks (move it, change its colour or line, its text). Called by the viewer
+ * with plain data, not from a form; the comments service's `updateDraftComment` checks it is mine.
+ */
+export async function updateDraftAction(input: { letterId: string; commentId: string; patch: DraftPatch }): Promise<ActionResult> {
+  return runAction(
+    draftPatch,
+    input,
+    async (actor, d) => {
+      await updateDraftComment(actor, d.commentId, { ...d.patch, points: toPairs(d.patch.points) });
+    },
+    paths,
+  );
+}
+
+/** Removes one of my draft marks; called by the viewer with plain data (the Delete key, the bin button). */
+export async function deleteDraftMarkAction(input: { letterId: string; commentId: string }): Promise<ActionResult> {
+  return runAction(z.object({ letterId, commentId: z.uuid() }), input, (actor, d) => deleteDraftComment(actor, d.commentId), paths);
+}
+
+export async function deleteDraftAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId, commentId: z.uuid() }), formObject(form), (actor, d) => deleteDraftComment(actor, d.commentId), paths, "הטיוטה נמחקה");
 }
 
 export async function replyAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({
-      letterId,
-      commentId: z.uuid(),
-      body: z.string({ message: "צריך לכתוב תגובה" }).trim().min(1, { message: "צריך לכתוב תגובה" }).max(4000),
-    }),
+    z.object({ letterId, commentId: z.uuid(), body: text("צריך לכתוב תגובה") }),
     formObject(form),
     (actor, d) => replyToComment(actor, d.commentId, d.body),
     paths,
@@ -173,15 +325,9 @@ export async function replyAction(_prev: ActionResult, form: FormData): Promise<
 
 export async function commentStatusAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({
-      letterId,
-      commentId: z.uuid(),
-      to: z.enum(COMMENT_STATUSES, { message: "צריך לבחור סטטוס" }),
-      note: z.string().trim().max(4000).optional(),
-      fixedInVersion: z.coerce.number().int().optional(),
-    }),
+    z.object({ letterId, commentId: z.uuid(), to: z.enum(["OPEN", "RESOLVED_FIXED", "RESOLVED_NO_CHANGE"]), note: z.string().trim().max(4000).optional() }),
     formObject(form),
-    (actor, d) => setCommentStatus(actor, d.commentId, { to: d.to, note: d.note, fixedInVersion: d.fixedInVersion }),
+    (actor, d) => setCommentStatus(actor, d.commentId, { to: d.to, note: d.note }),
     paths,
   );
 }
@@ -189,12 +335,13 @@ export async function commentStatusAction(_prev: ActionResult, form: FormData): 
 // ---------------------------------------------------------------- academic approver by personal link
 
 export type InviteResult =
-  | { ok: true; url: string; emailed: boolean; userName: string; expiresAt: string }
+  | { ok: true; url: string; emailed: boolean; userName: string; expiresAt: string; trackName: string }
   | { error: string }
   | null;
 
 const inviteSchema = z.object({
   letterId,
+  trackName: z.string().max(300).optional(),
   userId: z.uuid().optional(),
   name: z.string().trim().max(200).optional(),
   email: z.string().trim().max(200).optional(),
@@ -205,12 +352,13 @@ export async function inviteAcademicAction(_prev: InviteResult, form: FormData):
   const parsed = inviteSchema.safeParse(formObject(form));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "הטופס לא מולא כראוי" };
   const d = parsed.data;
+  if (!d.userId && !(d.name && d.email)) return { error: "צריך לבחור גורם מהרשימה, או לכתוב שם ומייל" };
   try {
     const issued = d.userId
       ? await inviteAcademic(actor, d.letterId, { userId: d.userId })
       : await inviteAcademic(actor, d.letterId, { name: d.name ?? "", email: d.email ?? "" });
-    revalidatePath(`/letters/${d.letterId}`);
-    return { ok: true, url: issued.url, emailed: issued.emailed, userName: issued.userName, expiresAt: issued.expiresAt.toISOString() };
+    for (const p of paths(d)) revalidatePath(p);
+    return { ok: true, url: issued.url, emailed: issued.emailed, userName: issued.userName, expiresAt: issued.expiresAt.toISOString(), trackName: d.trackName ?? "" };
   } catch (err) {
     return { error: userMessage(err) };
   }
@@ -218,12 +366,24 @@ export async function inviteAcademicAction(_prev: InviteResult, form: FormData):
 
 export async function reissueLinkAction(_prev: InviteResult, form: FormData): Promise<InviteResult> {
   const actor = actorOf(await requireUser());
-  const parsed = z.object({ letterId, userId: z.uuid() }).safeParse(formObject(form));
+  const parsed = z.object({ letterId, userId: z.uuid(), trackName: z.string().max(300).optional() }).safeParse(formObject(form));
   if (!parsed.success) return { error: "הטופס לא מולא כראוי" };
   try {
     const issued = await reissueLink(actor, parsed.data.letterId, parsed.data.userId);
-    return { ok: true, url: issued.url, emailed: issued.emailed, userName: issued.userName, expiresAt: issued.expiresAt.toISOString() };
+    for (const p of paths(parsed.data)) revalidatePath(p);
+    return {
+      ok: true,
+      url: issued.url,
+      emailed: issued.emailed,
+      userName: issued.userName,
+      expiresAt: issued.expiresAt.toISOString(),
+      trackName: parsed.data.trackName ?? "",
+    };
   } catch (err) {
     return { error: userMessage(err) };
   }
+}
+
+export async function removeAcademicAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return runAction(z.object({ letterId, userId: z.uuid() }), formObject(form), (actor, d) => removeAcademic(actor, d.letterId, d.userId), paths, "הגורם האקדמי הוסר");
 }

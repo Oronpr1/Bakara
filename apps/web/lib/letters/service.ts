@@ -1,176 +1,112 @@
 import { getDb, schema, type Db } from "@al/db";
 import {
-  activeApprovers,
-  activeSlotsOf,
-  autoAdvance,
+  abilities,
   canGlobal,
-  canOnLetter,
-  hasApproved,
-  roundOfSlot,
-  stageIndex,
-  transition,
+  decide,
+  reopen,
+  resetApprovals,
+  resubmit,
+  retract,
+  skipAcademic,
+  submit,
   type Actor,
-  type ApproverSlot,
-  type LetterAction,
-  type LetterState,
-  type Role,
-  type Stage,
-  type TransitionAction,
+  type DecisionKind,
+  type FlowView,
+  type SeatKey,
 } from "@al/domain";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib";
-import { AppError, forbidden } from "../errors";
+import { AppError, forbidden, notFound } from "../errors";
 import { audit, notify } from "../notify";
 import { getFileStore, sha256 } from "../storage";
-import { ensureUnit, resolveDefaults } from "../units/resolve";
+import { afterChange } from "./engine";
 import { syncLiveFileLock } from "./live-file-lock";
-import { loadLetter, type LetterRow, type Tx } from "./state";
+import { loadLetter, type LoadedLetter, type Tx } from "./state";
 
-const { users, seasons, letterRequests, approverAssignments, approvals, versions } = schema;
-
-function ensure(actor: Actor, action: LetterAction, state: LetterState) {
-  if (!canOnLetter(actor, action, state)) throw forbidden();
-}
-
-async function usersWithRole(tx: Tx, role: "CONTROL_MANAGER" | "VP_REGISTRATION"): Promise<string[]> {
-  const rows = await tx
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.active, true), sql`${role} = any(${users.roles})`));
-  return rows.map((r) => r.id);
-}
-
-/** Checks that every id is an active user holding the role. */
-async function assertRole(tx: Tx, ids: string[], role: Role) {
-  if (ids.length === 0) return;
-  const rows = await tx
-    .select({ id: users.id })
-    .from(users)
-    .where(and(inArray(users.id, ids), eq(users.active, true), sql`${role} = any(${users.roles})`));
-  if (rows.length !== new Set(ids).size) throw new AppError("INVALID", "אחד המשתמשים שנבחרו לא מתאים לתפקיד");
-}
+const { users, seasons, letterRequests, versions, reviews, comments, letterPeople } = schema;
 
 /**
- * Moves the letter to `stage`, then lets finished rounds advance on their own, and tells the
- * people who now have something to do.
+ * Runs one action on one letter in a transaction: loads it locked, hands over what the actor may
+ * do, then applies the automatic moves and notifications that follow every change.
  */
-async function setStage(tx: Tx, row: LetterRow, state: LetterState, stage: Stage, actorId: string) {
-  const settled = autoAdvance({ ...state, stage }) ?? stage;
-  if (settled === row.stage) return settled;
-
-  await tx
-    .update(letterRequests)
-    .set({
-      stage: settled,
-      stageChangedAt: new Date(),
-      approvedAt: settled === "APPROVED" ? new Date() : null,
-    })
-    .where(eq(letterRequests.id, row.id));
-  await audit(tx, actorId, "STAGE_CHANGED", { letterId: row.id, seasonId: row.seasonId }, { from: row.stage, to: settled });
-
-  const after = { ...state, stage: settled };
-  switch (settled) {
-    case "INITIAL_REVIEW":
-      await notify(tx, await usersWithRole(tx, "CONTROL_MANAGER"), "SUBMITTED_FOR_REVIEW", row.id, actorId);
-      break;
-    case "DRAFT":
-      await notify(tx, [row.advisorId], "RETURNED_FOR_CHANGES", row.id, actorId);
-      break;
-    case "REGISTRATION_ROUND":
-    case "ACADEMIC_ROUND": {
-      if (settled === "ACADEMIC_ROUND" && activeApprovers(after, ["ACADEMIC"]).length === 0) {
-        // Nobody to ask yet: tell the people of the letter's workspace to choose an academic approver.
-        await notify(
-          tx,
-          [row.advisorId, ...activeApprovers(after).map((a) => a.userId), ...(await usersWithRole(tx, "CONTROL_MANAGER"))],
-          "CHOOSE_ACADEMIC",
-          row.id,
-          actorId,
-        );
-        break;
-      }
-      const waiting = activeApprovers(after).filter(
-        (a) => roundOfSlot(a.slot) === settled && !hasApproved(after, a.userId, a.slot),
-      );
-      await notify(tx, waiting.map((a) => a.userId), "AWAITING_YOUR_APPROVAL", row.id, actorId);
-      break;
-    }
-    case "FINAL_REVIEW":
-      await notify(
-        tx,
-        [...(await usersWithRole(tx, "CONTROL_MANAGER")), ...(await usersWithRole(tx, "VP_REGISTRATION"))],
-        "READY_FOR_FINAL",
-        row.id,
-        actorId,
-      );
-      break;
-    case "APPROVED":
-      await notify(
-        tx,
-        [row.advisorId, ...activeApprovers(after).map((a) => a.userId)],
-        "APPROVED_FOR_DISTRIBUTION",
-        row.id,
-        actorId,
-      );
-      break;
-  }
-  return settled;
+async function withLetter<T>(
+  db: Db,
+  actor: Actor,
+  letterId: string,
+  fn: (c: { tx: Tx; l: LoadedLetter; before: FlowView; ab: ReturnType<typeof abilities> }) => Promise<T>,
+): Promise<{ out: T; view: FlowView }> {
+  const result = await db.transaction(async (tx) => {
+    const l = await loadLetter(tx, letterId, { lock: true });
+    const ab = abilities(actor, l.input);
+    if (!ab.view) throw notFound();
+    const out = await fn({ tx, l, before: ab.flow, ab });
+    const after = await afterChange(tx, letterId, ab.flow, actor.userId);
+    return { out, view: after.view, from: ab.flow.phase };
+  });
+  // After the commit: a slow or failing SharePoint call must not hold or undo the approval.
+  await syncLiveFileLock(letterId, result.from, result.view.phase, actor.userId, { db });
+  return { out: result.out, view: result.view };
 }
 
-/** Re-checks whether a round finished after approvals, comment changes, or removals. */
-export async function settleLetter(tx: Tx, letterId: string, actorId: string) {
-  const { row, state } = await loadLetter(tx, letterId, { lock: true });
-  return setStage(tx, row, state, state.stage, actorId);
+/** Checks that every id is an active user holding one of the roles. */
+async function assertRole(tx: Tx, ids: string[], ...roles: ("CONTROL_ADVISOR" | "REGISTRATION_MANAGER" | "ACADEMIC_APPROVER")[]) {
+  if (ids.length === 0) return;
+  const rows = await tx.select({ id: users.id, roles: users.roles }).from(users).where(and(inArray(users.id, ids), eq(users.active, true)));
+  const ok = rows.filter((r) => roles.some((role) => r.roles.includes(role)));
+  if (ok.length !== new Set(ids).size) throw new AppError("INVALID", "אחד המשתמשים שנבחרו לא מתאים לתפקיד");
 }
 
 // ---------------------------------------------------------------- seasons
 
-export async function createSeason(
-  actor: Actor,
-  input: { name: string; copyFromSeasonId?: string; reminderIntervalDays?: number; codeFrom?: string; codeTo?: string },
-  db: Db = getDb(),
-) {
+export interface SeasonInput {
+  name: string;
+  copyFromSeasonId?: string;
+  reminderIntervalDays?: number;
+  /** When copying: the start of every track code changes (227… becomes 228…). */
+  codeFrom?: string;
+  codeTo?: string;
+  sequentialReview?: boolean;
+  controlReview?: boolean;
+  dueDate?: string | null;
+}
+
+export async function createSeason(actor: Actor, input: SeasonInput, db: Db = getDb()) {
   if (!canGlobal(actor, "MANAGE_SEASONS")) throw forbidden();
   const name = input.name.trim();
   if (!name) throw new AppError("INVALID", "צריך לתת שם לעונה");
+  if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new AppError("INVALID", "תאריך היעד לא תקין");
 
   return db.transaction(async (tx) => {
+    const source = input.copyFromSeasonId
+      ? (await tx.select().from(seasons).where(eq(seasons.id, input.copyFromSeasonId)))[0]
+      : undefined;
     const [season] = await tx
       .insert(seasons)
       .values({
         name,
         sourceSeasonId: input.copyFromSeasonId ?? null,
-        reminderIntervalDays: input.reminderIntervalDays ?? 3,
+        reminderIntervalDays: input.reminderIntervalDays ?? source?.reminderIntervalDays ?? 3,
+        // A copied season keeps the way the previous one worked, unless told otherwise.
+        sequentialReview: input.sequentialReview ?? source?.sequentialReview ?? true,
+        controlReview: input.controlReview ?? source?.controlReview ?? false,
+        dueDate: input.dueDate ?? null,
         createdBy: actor.userId,
       })
       .returning();
     await audit(tx, actor.userId, "SEASON_CREATED", { seasonId: season!.id }, { name, copyFrom: input.copyFromSeasonId });
 
     if (input.copyFromSeasonId) {
-      // "צור על בסיס עונה קודמת": the same tracks, with no versions, comments or approvals. A year
-      // changes the start of every track code (227… becomes 228…). The people are the ones
-      // responsible now: the campus + faculty's registration manager and advisor, and the VP.
+      // "צור על בסיס עונה קודמת": the same tracks, with no versions, comments or decisions. The
+      // year changes the start of each track code. The people are last season's, for whoever is
+      // still active in the same role; a track whose person left starts unassigned.
       const { codeFrom, codeTo } = input;
       const renumber = (n: string) => (codeFrom && codeTo !== undefined && n.startsWith(codeFrom) ? codeTo + n.slice(codeFrom.length) : n);
-      const source = await tx.select().from(letterRequests).where(eq(letterRequests.seasonId, input.copyFromSeasonId));
-      const vps = await usersWithRole(tx, "VP_REGISTRATION");
+      const old = await tx.select().from(letterRequests).where(eq(letterRequests.seasonId, input.copyFromSeasonId));
       const active = new Map((await tx.select().from(users).where(eq(users.active, true))).map((u) => [u.id, u]));
-      for (const l of source) {
-        const defaults = await resolveDefaults(tx, l.campus, l.faculty);
-        const previous = await tx
-          .select()
-          .from(approverAssignments)
-          .where(
-            and(
-              eq(approverAssignments.letterId, l.id),
-              eq(approverAssignments.slot, "REGISTRATION_MANAGER"),
-              isNull(approverAssignments.removedAt),
-            ),
-          );
-        const advisorId = active.get(l.advisorId)?.roles.includes("CONTROL_ADVISOR") ? l.advisorId : defaults.advisorId;
-        const managerId = defaults.registrationManagerId ?? previous[0]?.userId ?? null;
-        if (!advisorId) continue;
-        const [copy] = await tx
+      const extras = old.length ? await tx.select().from(letterPeople).where(inArray(letterPeople.letterId, old.map((l) => l.id))) : [];
+      const still = (id: string | null, role: "CONTROL_ADVISOR" | "REGISTRATION_MANAGER") => (id && active.get(id)?.roles.includes(role) ? id : null);
+      for (const l of old) {
+        const [created] = await tx
           .insert(letterRequests)
           .values({
             seasonId: season!.id,
@@ -178,32 +114,49 @@ export async function createSeason(
             faculty: l.faculty,
             trackName: l.trackName,
             trackNumber: renumber(l.trackNumber),
-            advisorId,
+            advisorId: still(l.advisorId, "CONTROL_ADVISOR"),
+            registrationManagerId: still(l.registrationManagerId, "REGISTRATION_MANAGER"),
+            sourceLetterId: l.id,
             createdBy: actor.userId,
           })
           .onConflictDoNothing()
           .returning({ id: letterRequests.id });
-        if (!copy) continue;
-        const slots: { userId: string; slot: ApproverSlot }[] = [
-          ...(managerId ? [{ userId: managerId, slot: "REGISTRATION_MANAGER" as const }] : []),
-          ...vps.map((userId) => ({ userId, slot: "VP_REGISTRATION" as const })),
-        ];
-        if (slots.length)
-          await tx.insert(approverAssignments).values(slots.map((x) => ({ letterId: copy.id, ...x, assignedBy: actor.userId })));
+        if (!created) continue;
+        const keep = extras.filter((e) => e.letterId === l.id && active.has(e.userId));
+        if (keep.length) await tx.insert(letterPeople).values(keep.map((e) => ({ letterId: created.id, userId: e.userId, kind: e.kind, addedBy: actor.userId })));
       }
     }
     return season!;
   });
 }
 
-export async function setReminderInterval(actor: Actor, seasonId: string, days: number, db: Db = getDb()) {
-  if (!canGlobal(actor, "SET_REMINDER_INTERVAL")) throw forbidden();
-  if (!Number.isInteger(days) || days < 1 || days > 60) throw new AppError("INVALID", "מספר הימים צריך להיות בין 1 ל-60");
+export async function updateSeason(
+  actor: Actor,
+  seasonId: string,
+  change: { reminderIntervalDays?: number; sequentialReview?: boolean; controlReview?: boolean; dueDate?: string | null; name?: string },
+  db: Db = getDb(),
+) {
+  if (!canGlobal(actor, "MANAGE_SEASONS")) throw forbidden();
+  const days = change.reminderIntervalDays;
+  if (days !== undefined && (!Number.isInteger(days) || days < 1 || days > 60))
+    throw new AppError("INVALID", "מספר הימים צריך להיות בין 1 ל-60");
+  if (change.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(change.dueDate)) throw new AppError("INVALID", "תאריך היעד לא תקין");
+  if (change.name !== undefined && !change.name.trim()) throw new AppError("INVALID", "צריך לתת שם לעונה");
   await db.transaction(async (tx) => {
-    await tx.update(seasons).set({ reminderIntervalDays: days }).where(eq(seasons.id, seasonId));
-    await audit(tx, actor.userId, "REMINDER_INTERVAL_SET", { seasonId }, { days });
+    const set: Partial<typeof seasons.$inferInsert> = {};
+    if (days !== undefined) set.reminderIntervalDays = days;
+    if (change.sequentialReview !== undefined) set.sequentialReview = change.sequentialReview;
+    if (change.controlReview !== undefined) set.controlReview = change.controlReview;
+    if (change.dueDate !== undefined) set.dueDate = change.dueDate || null;
+    if (change.name !== undefined) set.name = change.name.trim();
+    const updated = await tx.update(seasons).set(set).where(eq(seasons.id, seasonId)).returning({ id: seasons.id });
+    if (updated.length === 0) throw notFound();
+    await audit(tx, actor.userId, "SEASON_UPDATED", { seasonId }, change);
   });
 }
+
+export const setReminderInterval = (actor: Actor, seasonId: string, days: number, db: Db = getDb()) =>
+  updateSeason(actor, seasonId, { reminderIntervalDays: days }, db);
 
 // ---------------------------------------------------------------- letter requests
 
@@ -213,14 +166,10 @@ export interface LetterRequestInput {
   faculty: string;
   trackName: string;
   trackNumber: string;
-  /** Default: the advisor of the campus + faculty (set once in "קמפוסים ופקולטות"). */
+  /** The advisor who prepares this track's letter. May be left for later ("שיבוץ"). */
   advisorId?: string;
-  /** Default: the registration manager of the campus + faculty (set once in "קמפוסים ופקולטות"). */
+  /** The track's registration manager. May be left for later. */
   registrationManagerId?: string;
-  /** Default: the VP of registration (every active user holding the role). */
-  vpId?: string;
-  /** Usually empty: the academic approver is chosen later, once the registration round is done. */
-  academicIds?: string[];
   dueDate?: string | null; // YYYY-MM-DD
 }
 
@@ -229,30 +178,12 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
   const text = [input.campus, input.faculty, input.trackName, input.trackNumber].map((s) => s.trim());
   if (text.some((s) => !s)) throw new AppError("INVALID", "צריך למלא קמפוס, פקולטה, מסלול ומספר מסלול");
   if (input.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new AppError("INVALID", "תאריך היעד לא תקין");
-
   const [campus, faculty, trackName, trackNumber] = text as [string, string, string, string];
-  // Registered even when this attempt is refused below, so the campus + faculty shows up in the
-  // screen where its registration manager is set.
-  await ensureUnit(db, campus, faculty);
 
   return db.transaction(async (tx) => {
-    const academicIds = [...new Set(input.academicIds ?? [])];
-    const defaults = await resolveDefaults(tx, campus, faculty);
-    const advisorId = input.advisorId ?? defaults.advisorId;
-    if (!advisorId)
-      throw new AppError("INVALID", `לא הוגדרה יועצת בקרה ל${faculty} ב${campus}. מגדירים אותה פעם אחת במסך "קמפוסים ופקולטות".`);
-    await assertRole(tx, [advisorId], "CONTROL_ADVISOR");
-    await assertRole(tx, academicIds, "ACADEMIC_APPROVER");
-
-    // The campus + faculty is a workspace of its own; its registration manager is set once.
-    const registrationManagerId = input.registrationManagerId ?? defaults.registrationManagerId;
-    if (!registrationManagerId)
-      throw new AppError("INVALID", `לא הוגדר מנהל רישום ל${faculty} ב${campus}. מגדירים אותו פעם אחת במסך "קמפוסים ופקולטות" (לקמפוס כולו או לפקולטה).`);
-    await assertRole(tx, [registrationManagerId], "REGISTRATION_MANAGER");
-    const vpIds = input.vpId ? [input.vpId] : await usersWithRole(tx, "VP_REGISTRATION");
-    if (vpIds.length === 0) throw new AppError("INVALID", 'לא הוגדר סמנכ"ל רישום. מוסיפים משתמש עם התפקיד במסך "משתמשים".');
-    await assertRole(tx, vpIds, "VP_REGISTRATION");
-
+    const advisorId = input.advisorId ?? null;
+    if (advisorId) await assertRole(tx, [advisorId], "CONTROL_ADVISOR");
+    if (input.registrationManagerId) await assertRole(tx, [input.registrationManagerId], "REGISTRATION_MANAGER");
     const inserted = await tx
       .insert(letterRequests)
       .values({
@@ -262,6 +193,7 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
         trackName,
         trackNumber,
         advisorId,
+        registrationManagerId: input.registrationManagerId ?? null,
         dueDate: input.dueDate || null,
         createdBy: actor.userId,
       })
@@ -269,107 +201,63 @@ export async function createLetterRequest(actor: Actor, input: LetterRequestInpu
       .returning();
     const letter = inserted[0];
     if (!letter) throw new AppError("CONFLICT", "כבר קיימת דרישת מכתב למסלול הזה בקמפוס הזה בעונה הזאת");
-
-    const slots: { userId: string; slot: ApproverSlot }[] = [
-      { userId: registrationManagerId, slot: "REGISTRATION_MANAGER" },
-      ...vpIds.map((userId) => ({ userId, slot: "VP_REGISTRATION" as const })),
-      ...academicIds.map((userId) => ({ userId, slot: "ACADEMIC" as const })),
-    ];
-    await tx
-      .insert(approverAssignments)
-      .values(slots.map((s) => ({ letterId: letter.id, ...s, assignedBy: actor.userId })));
     await audit(tx, actor.userId, "LETTER_CREATED", { letterId: letter.id, seasonId: letter.seasonId }, { trackName });
+    // A new letter to prepare lands on the advisor's list.
+    if (advisorId) await notify(tx, [advisorId], "YOUR_TURN", letter.id, actor.userId);
     return letter;
   });
 }
 
-/** Replaces the approver in a slot (registration manager or VP), keeping history. */
-export async function replaceApprover(
-  actor: Actor,
-  letterId: string,
-  slot: "REGISTRATION_MANAGER" | "VP_REGISTRATION",
-  userId: string,
-  db: Db = getDb(),
-) {
-  await db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    ensure(actor, slot === "REGISTRATION_MANAGER" ? "SET_REGISTRATION_MANAGER" : "REMOVE_APPROVER", state);
-    await assertRole(tx, [userId], slot === "REGISTRATION_MANAGER" ? "REGISTRATION_MANAGER" : "VP_REGISTRATION");
-    const current = activeApprovers(state, [slot]);
-    if (current.length === 1 && current[0]!.userId === userId) return;
-
-    await tx
-      .update(approverAssignments)
-      .set({ removedAt: new Date(), removedBy: actor.userId, removedReason: "הוחלף" })
-      .where(
-        and(
-          eq(approverAssignments.letterId, letterId),
-          eq(approverAssignments.slot, slot),
-          isNull(approverAssignments.removedAt),
-        ),
-      );
-    await tx.insert(approverAssignments).values({ letterId, userId, slot, assignedBy: actor.userId });
-    await audit(tx, actor.userId, "APPROVER_REPLACED", { letterId, seasonId: row.seasonId }, { slot, userId });
-    if (row.stage === roundOfSlot(slot)) await notify(tx, [userId], "AWAITING_YOUR_APPROVAL", letterId, actor.userId);
-  });
-}
-
-export async function addAcademicApprover(actor: Actor, letterId: string, userId: string, db: Db = getDb()) {
-  await db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    ensure(actor, "SET_ACADEMIC_APPROVERS", state);
-    await assertRole(tx, [userId], "ACADEMIC_APPROVER");
-    if (activeApprovers(state, ["ACADEMIC"]).some((a) => a.userId === userId)) return;
-    await tx.insert(approverAssignments).values({ letterId, userId, slot: "ACADEMIC", assignedBy: actor.userId });
-    await audit(tx, actor.userId, "APPROVER_ADDED", { letterId, seasonId: row.seasonId }, { slot: "ACADEMIC", userId });
-    if (row.stage === "ACADEMIC_ROUND") await notify(tx, [userId], "AWAITING_YOUR_APPROVAL", letterId, actor.userId);
-  });
-}
-
-/** מנהלת הבקרה / הסמנכ"ל מסירים מאשר מהתהליך. The round may then complete on its own. */
-export async function removeApprover(
-  actor: Actor,
-  letterId: string,
-  userId: string,
-  slot: ApproverSlot,
-  reason: string,
-  db: Db = getDb(),
-) {
-  await db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    // Before the academic round, anyone in the workspace may still edit the academic list; once
-    // the round has started only the control manager / VP remove an academic approver.
-    const allowed =
-      canOnLetter(actor, "REMOVE_APPROVER", state) ||
-      (slot === "ACADEMIC" &&
-        stageIndex(state.stage) < stageIndex("ACADEMIC_ROUND") &&
-        canOnLetter(actor, "SET_ACADEMIC_APPROVERS", state));
-    if (!allowed) throw forbidden();
-    const updated = await tx
-      .update(approverAssignments)
-      .set({ removedAt: new Date(), removedBy: actor.userId, removedReason: reason.trim() || null })
-      .where(
-        and(
-          eq(approverAssignments.letterId, letterId),
-          eq(approverAssignments.userId, userId),
-          eq(approverAssignments.slot, slot),
-          isNull(approverAssignments.removedAt),
-        ),
-      )
-      .returning({ id: approverAssignments.id });
-    if (updated.length === 0) return;
-    await audit(tx, actor.userId, "APPROVER_REMOVED", { letterId, seasonId: row.seasonId }, { slot, userId, reason });
-    await settleLetter(tx, letterId, actor.userId);
-  });
-}
-
+/** Gives the track its advisor, or a different one. */
 export async function changeAdvisor(actor: Actor, letterId: string, advisorId: string, db: Db = getDb()) {
-  await db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    ensure(actor, "CHANGE_ADVISOR", state);
+  await withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.reassignAdvisor) throw forbidden();
     await assertRole(tx, [advisorId], "CONTROL_ADVISOR");
+    if (advisorId === l.row.advisorId) return;
     await tx.update(letterRequests).set({ advisorId }).where(eq(letterRequests.id, letterId));
-    await audit(tx, actor.userId, "ADVISOR_CHANGED", { letterId, seasonId: row.seasonId }, { from: row.advisorId, to: advisorId });
+    await audit(tx, actor.userId, "ADVISOR_CHANGED", { letterId, seasonId: l.row.seasonId }, { from: l.row.advisorId, to: advisorId });
+    await notify(tx, [advisorId], "YOUR_TURN", letterId, actor.userId);
+  });
+}
+
+/**
+ * The track's registration manager (null: nobody yet). If the letter is waiting for review, the
+ * new manager is told it is their turn and the waiting clock starts again for them.
+ */
+export async function setLetterRegistrationManager(actor: Actor, letterId: string, userId: string | null, db: Db = getDb()) {
+  if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
+  await withLetter(db, actor, letterId, async ({ tx, l }) => {
+    if (userId) await assertRole(tx, [userId], "REGISTRATION_MANAGER");
+    await tx.update(letterRequests).set({ registrationManagerId: userId }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "REGISTRATION_MANAGER_SET", { letterId, seasonId: l.row.seasonId }, { userId });
+  });
+}
+
+export type LetterPersonKind = "ADVISOR" | "COMMENTER";
+
+/**
+ * More people on one track, at the control manager's discretion: another advisor (prepares and
+ * fixes like the main one) or a commenter (looks, comments and suggests; nothing waits for them and
+ * they approve nothing). The registration manager who approves is the track's own, set separately.
+ */
+export async function addLetterPerson(actor: Actor, letterId: string, userId: string, kind: LetterPersonKind, db: Db = getDb()) {
+  if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
+  await withLetter(db, actor, letterId, async ({ tx, l }) => {
+    if (kind === "COMMENTER") {
+      const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.active, true)));
+      if (!u) throw new AppError("INVALID", "המשתמש שנבחר לא פעיל");
+    } else await assertRole(tx, [userId], "CONTROL_ADVISOR");
+    await tx.insert(letterPeople).values({ letterId, userId, kind, addedBy: actor.userId }).onConflictDoNothing();
+    await audit(tx, actor.userId, "PERSON_ADDED", { letterId, seasonId: l.row.seasonId }, { userId, kind });
+    await notify(tx, [userId], kind === "COMMENTER" ? "ADDED_TO_LETTER" : "YOUR_TURN", letterId, actor.userId);
+  });
+}
+
+export async function removeLetterPerson(actor: Actor, letterId: string, userId: string, kind: LetterPersonKind, db: Db = getDb()) {
+  if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
+  await withLetter(db, actor, letterId, async ({ tx, l }) => {
+    await tx.delete(letterPeople).where(and(eq(letterPeople.letterId, letterId), eq(letterPeople.userId, userId), eq(letterPeople.kind, kind)));
+    await audit(tx, actor.userId, "PERSON_REMOVED", { letterId, seasonId: l.row.seasonId }, { userId, kind });
   });
 }
 
@@ -378,36 +266,36 @@ export async function changeAdvisor(actor: Actor, letterId: string, advisorId: s
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
 
 function isDocx(bytes: Uint8Array) {
-  // A DOCX is a ZIP package; the content-types part name appears in its local headers.
-  return bytes[0] === 0x50 && bytes[1] === 0x4b && Buffer.from(bytes.subarray(0, 4096)).includes("[Content_Types].xml");
+  // A DOCX is a ZIP: it starts with "PK".
+  return bytes[0] === 0x50 && bytes[1] === 0x4b;
 }
 
 function isPdf(bytes: Uint8Array) {
-  return Buffer.from(bytes.subarray(0, 1024)).includes("%PDF-");
+  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
 }
 
 /**
- * Stores a new official version: the exact DOCX and its review PDF, frozen with their hashes.
- * Comments and approvals are kept; the people on the letter are told a new version exists.
- * `sharepointCTag` is the content tag of the SharePoint working file the version was taken
- * from, so the letter page can tell when the file has changed since.
+ * A new official version: the PDF the reviewers mark, with the Word file it came from when there
+ * is one (the add-in and "edit in Word" send both; a plain upload may be the PDF alone). Allowed to
+ * the advisor while she holds the letter (preparing or fixing) and to the control manager at any
+ * time before approval.
  */
 export async function uploadVersion(
   actor: Actor,
   letterId: string,
   input: {
-    docx: Uint8Array;
+    docx?: Uint8Array | null;
     pdf: Uint8Array;
     note?: string;
     pdfSource?: "UPLOAD" | "ADDIN" | "GRAPH";
     sharepointCTag?: string;
+    textMatch?: number | null;
   },
   db: Db = getDb(),
 ) {
   const { docx, pdf } = input;
-  if (docx.byteLength > MAX_FILE_BYTES || pdf.byteLength > MAX_FILE_BYTES)
-    throw new AppError("INVALID", "הקובץ גדול מדי (עד 30MB)");
-  if (!isDocx(docx)) throw new AppError("INVALID", "קובץ ה-Word לא תקין. צריך קובץ DOCX");
+  if ((docx?.byteLength ?? 0) > MAX_FILE_BYTES || pdf.byteLength > MAX_FILE_BYTES) throw new AppError("INVALID", "הקובץ גדול מדי (עד 30MB)");
+  if (docx && !isDocx(docx)) throw new AppError("INVALID", "קובץ ה-Word לא תקין. צריך קובץ DOCX");
   if (!isPdf(pdf)) throw new AppError("INVALID", "קובץ ה-PDF לא תקין");
 
   let pageCount: number;
@@ -417,27 +305,26 @@ export async function uploadVersion(
     throw new AppError("INVALID", "לא הצלחנו לקרוא את קובץ ה-PDF");
   }
 
-  return db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    ensure(actor, "UPLOAD_VERSION", state);
-    const number = row.latestVersion + 1;
+  const { out } = await withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.uploadVersion) throw forbidden();
+    const number = l.row.latestVersion + 1;
     const base = `letters/${letterId}/v${number}-${Date.now()}`;
     const store = getFileStore();
-    await store.put(`${base}.docx`, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    if (docx) await store.put(`${base}.docx`, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     await store.put(`${base}.pdf`, pdf, "application/pdf");
-
     const [version] = await tx
       .insert(versions)
       .values({
         letterId,
         number,
-        docxKey: `${base}.docx`,
-        docxSha256: sha256(docx),
-        docxSize: docx.byteLength,
+        docxKey: docx ? `${base}.docx` : null,
+        docxSha256: docx ? sha256(docx) : null,
+        docxSize: docx ? docx.byteLength : null,
         pdfKey: `${base}.pdf`,
         pdfSha256: sha256(pdf),
         pdfSize: pdf.byteLength,
         pageCount,
+        textMatch: input.textMatch ?? null,
         pdfSource: input.pdfSource ?? "UPLOAD",
         note: input.note?.trim() || null,
         createdBy: actor.userId,
@@ -447,62 +334,164 @@ export async function uploadVersion(
       .update(letterRequests)
       .set({ latestVersion: number, ...(input.sharepointCTag ? { sharepointVersionCTag: input.sharepointCTag } : {}) })
       .where(eq(letterRequests.id, letterId));
-    await audit(tx, actor.userId, "VERSION_UPLOADED", { letterId, seasonId: row.seasonId }, { number, source: version!.pdfSource });
-    if (row.stage !== "DRAFT")
-      await notify(
-        tx,
-        [row.advisorId, ...activeApprovers(state).map((a) => a.userId)],
-        "NEW_VERSION",
-        letterId,
-        actor.userId,
-        { number },
-      );
+    await audit(tx, actor.userId, "VERSION_UPLOADED", { letterId, seasonId: l.row.seasonId }, { number, source: version!.pdfSource });
+    if (l.row.phase !== "DRAFT") {
+      // Everybody who approved or is waiting hears that there is a new version to look at.
+      const decided = l.input.decisions.map((d) => d.userId);
+      await notify(tx, [...decided, ...ab.flow.holder.userIds], "NEW_VERSION", letterId, actor.userId, { number });
+    }
     return version!;
   });
+  return out;
 }
 
-// ---------------------------------------------------------------- workflow actions
+// ---------------------------------------------------------------- the flow
 
-export async function performTransition(
+const decisionRow = (letterId: string, d: { seat: string; kind: DecisionKind; userId: string; onBehalfOf?: string | null; versionNumber: number; note?: string | null }) => ({
+  letterId,
+  seat: d.seat,
+  kind: d.kind,
+  userId: d.userId,
+  onBehalfOf: d.onBehalfOf ?? null,
+  versionNumber: d.versionNumber,
+  note: d.note ?? null,
+});
+
+/** The advisor sends a draft to review. */
+export async function submitLetter(actor: Actor, letterId: string, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    submit(l.input); // the reason it cannot be sent, in Hebrew
+    if (!ab.submit) throw forbidden();
+    await tx.update(letterRequests).set({ phase: "REVIEW", advisorHold: false }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "SUBMITTED", { letterId, seasonId: l.row.seasonId }, { version: l.row.latestVersion });
+  });
+}
+
+/**
+ * A reviewer approves or returns the letter. The reviewer's draft comments are published with the
+ * decision. "Approve" with comments means "approved, subject to fixes".
+ */
+export async function decideLetter(
   actor: Actor,
   letterId: string,
-  action: TransitionAction,
-  reason?: string,
+  input: { seat: SeatKey; kind: "APPROVED" | "CHANGES"; note?: string },
   db: Db = getDb(),
 ) {
-  const { from, to } = await db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    ensure(actor, action, state);
-    const target = transition(state, action, { reason });
-    if (reason || action === "SKIP_ACADEMIC")
-      await audit(tx, actor.userId, action, { letterId, seasonId: row.seasonId }, reason ? { reason } : {});
-    return { from: row.stage, to: await setStage(tx, row, state, target, actor.userId) };
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    const mine = ab.decide.find((s) => s.seat === input.seat);
+    if (!mine) {
+      decide(l.input, { seat: input.seat, kind: input.kind, userId: actor.userId }); // the specific reason, if any
+      throw forbidden();
+    }
+    const published = await tx
+      .update(comments)
+      .set({ publishedAt: new Date() })
+      .where(and(eq(comments.letterId, letterId), eq(comments.authorId, actor.userId), isNull(comments.publishedAt)))
+      .returning({ id: comments.id });
+    const d = decide(l.input, {
+      seat: input.seat,
+      kind: input.kind,
+      userId: actor.userId,
+      onBehalfOf: mine.onBehalfOf,
+      note: input.note,
+      publishedComments: published.length,
+    });
+    await tx.insert(reviews).values(decisionRow(letterId, d));
+    const needsFixes = d.kind === "CHANGES" || published.length > 0;
+    if (needsFixes) await tx.update(letterRequests).set({ advisorHold: true }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, d.kind === "APPROVED" ? "APPROVED" : "RETURNED", { letterId, seasonId: l.row.seasonId }, {
+      seat: d.seat,
+      version: d.versionNumber,
+      comments: published.length,
+      onBehalfOf: d.onBehalfOf,
+      note: d.note,
+    });
+    if (needsFixes)
+      await notify(tx, [l.row.advisorId], "RETURNED_FOR_FIXES", letterId, actor.userId, { comments: published.length });
+    if (d.seat.startsWith("ACADEMIC:")) await notify(tx, [l.row.advisorId], "ACADEMIC_ANSWERED", letterId, actor.userId, { kind: d.kind });
+    if (d.onBehalfOf && d.onBehalfOf !== actor.userId) await notify(tx, [d.onBehalfOf], "ACTED_FOR_YOU", letterId, actor.userId, { by: "ורוניקה" });
   });
-  // After the commit: a slow or failing SharePoint call must not hold or undo the approval.
-  await syncLiveFileLock(letterId, from, to, actor.userId, { db });
-  return to;
 }
 
-/** Records the actor's approval for every slot they may approve now. */
-export async function approveLetter(actor: Actor, letterId: string, db: Db = getDb()) {
-  return db.transaction(async (tx) => {
-    const { row, state } = await loadLetter(tx, letterId, { lock: true });
-    ensure(actor, "APPROVE", state);
-    const slots = activeSlotsOf(actor, state).filter(
-      (slot) => stageIndex(state.stage) >= stageIndex(roundOfSlot(slot)) && !hasApproved(state, actor.userId, slot),
-    );
+/** The advisor finished the fixes ("שלחתי תיקונים"). */
+export async function resubmitLetter(actor: Actor, letterId: string, opts: { resendToAcademic?: boolean } = {}, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    const r = resubmit(l.input, opts);
+    if (!ab.resubmit) throw forbidden();
+    for (const seat of r.clear)
+      await tx.insert(reviews).values(decisionRow(letterId, { seat, kind: "CLEARED", userId: actor.userId, versionNumber: l.row.latestVersion }));
     await tx
-      .insert(approvals)
-      .values(slots.map((slot) => ({ letterId, userId: actor.userId, slot, versionNumber: row.latestVersion })))
-      .onConflictDoNothing();
-    await audit(tx, actor.userId, "APPROVED", { letterId, seasonId: row.seasonId }, { slots, version: row.latestVersion });
-    const after: LetterState = {
-      ...state,
-      approvals: [
-        ...state.approvals,
-        ...slots.map((slot) => ({ userId: actor.userId, slot, versionNumber: row.latestVersion, at: new Date() })),
-      ],
-    };
-    return setStage(tx, row, after, state.stage, actor.userId);
+      .update(letterRequests)
+      .set({ advisorHold: false, ...(r.toPhase ? { phase: r.toPhase } : {}) })
+      .where(eq(letterRequests.id, letterId));
+    const returners = l.input.decisions.filter((d) => d.kind === "CHANGES").map((d) => d.userId);
+    await audit(tx, actor.userId, "RESUBMITTED", { letterId, seasonId: l.row.seasonId }, { version: l.row.latestVersion });
+    await notify(tx, returners, "RESUBMITTED", letterId, actor.userId);
   });
 }
+
+/** A reviewer takes back their own approval, to look at the letter again. */
+export async function retractApproval(actor: Actor, letterId: string, seat: SeatKey, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.retract.includes(seat)) throw forbidden();
+    const d = retract(l.input, seat, actor.userId);
+    await tx.insert(reviews).values(decisionRow(letterId, d));
+    await audit(tx, actor.userId, "APPROVAL_RETRACTED", { letterId, seasonId: l.row.seasonId }, { seat });
+  });
+}
+
+export async function skipAcademicRound(actor: Actor, letterId: string, note: string | undefined, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.skipAcademic) throw forbidden();
+    const r = skipAcademic(l.input);
+    await tx.update(letterRequests).set({ phase: r.toPhase, advisorHold: false }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "ACADEMIC_SKIPPED", { letterId, seasonId: l.row.seasonId }, note?.trim() ? { note: note.trim() } : {});
+  });
+}
+
+/** "Everyone approves again": a substantial change after approvals were given. */
+export async function resetLetterApprovals(actor: Actor, letterId: string, note: string | undefined, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.resetApprovals) throw forbidden();
+    const r = resetApprovals(l.input, actor.userId);
+    for (const d of r.clear) await tx.insert(reviews).values(decisionRow(letterId, d));
+    await tx.update(letterRequests).set({ phase: r.toPhase, advisorHold: false }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "APPROVALS_RESET", { letterId, seasonId: l.row.seasonId }, note?.trim() ? { note: note.trim() } : {});
+  });
+}
+
+export async function reopenLetter(actor: Actor, letterId: string, note: string | undefined, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.reopen) throw forbidden();
+    const r = reopen(l.input, actor.userId);
+    for (const d of r.clear) await tx.insert(reviews).values(decisionRow(letterId, d));
+    await tx.update(letterRequests).set({ phase: r.toPhase, approvedAt: null, inGilboaAt: null }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "REOPENED", { letterId, seasonId: l.row.seasonId }, note?.trim() ? { note: note.trim() } : {});
+  });
+}
+
+/** The advisor marks the approved letter as loaded into Gilboa. */
+export async function markInGilboa(actor: Actor, letterId: string, db: Db = getDb()) {
+  return withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.markInGilboa) throw forbidden();
+    await tx.update(letterRequests).set({ inGilboaAt: new Date() }).where(eq(letterRequests.id, letterId));
+    await audit(tx, actor.userId, "IN_GILBOA", { letterId, seasonId: l.row.seasonId });
+  });
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** "תזכיר": a reminder to whoever holds the letter now. Returns who was reminded. */
+export async function remindHolders(actor: Actor, letterId: string, db: Db = getDb()): Promise<string[]> {
+  const { out } = await withLetter(db, actor, letterId, async ({ tx, l, ab }) => {
+    if (!ab.remind) throw forbidden();
+    // Academic approvers have no login (a reminder would link to a page they cannot open).
+    const ids = ab.flow.holder.kind === "ACADEMIC" ? [] : [...ab.flow.holder.userIds].filter((id) => id !== actor.userId);
+    const days = Math.floor((Date.now() - l.row.holderSince.getTime()) / DAY);
+    await notify(tx, ids, "REMINDER", letterId, actor.userId, { days });
+    await audit(tx, actor.userId, "REMINDED", { letterId, seasonId: l.row.seasonId }, { to: ids });
+    return ids;
+  });
+  return out;
+}
+

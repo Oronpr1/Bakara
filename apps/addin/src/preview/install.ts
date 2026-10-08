@@ -43,7 +43,7 @@ export function installPreview(name: string): Host {
     scenario === "empty"
       ? previewLetter({ openComments: [], latestVersion: 0 })
       : scenario === "readonly"
-        ? previewLetter({ stage: "ACADEMIC_ROUND", stageLabel: "סבב אקדמי", canUpload: false, canSubmit: false })
+        ? previewLetter({ stage: "ACADEMIC", stageLabel: "אצל גורם אקדמי", canUpload: false, canSubmit: false })
         : previewLetter();
 
   const api = new MockApi({
