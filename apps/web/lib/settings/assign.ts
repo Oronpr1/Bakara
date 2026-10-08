@@ -15,10 +15,8 @@ export type BulkMode =
   | "MANAGER" // the track's registration manager
   | "MANAGER_CLEAR" // no registration manager (until one is assigned again)
   | "ADD_ADVISOR" // one more advisor on the track
-  | "ADD_MANAGER" // one more registration manager on the track
   | "ADD_COMMENTER" // someone attached to look and comment, who approves nothing
   | "REMOVE_ADVISOR"
-  | "REMOVE_MANAGER"
   | "REMOVE_COMMENTER";
 
 export const BULK_MODES: readonly BulkMode[] = [
@@ -26,10 +24,8 @@ export const BULK_MODES: readonly BulkMode[] = [
   "MANAGER",
   "MANAGER_CLEAR",
   "ADD_ADVISOR",
-  "ADD_MANAGER",
   "ADD_COMMENTER",
   "REMOVE_ADVISOR",
-  "REMOVE_MANAGER",
   "REMOVE_COMMENTER",
 ];
 
@@ -82,15 +78,11 @@ export async function bulkAssign(
             ? !row.registrationManagerId
             : input.mode === "ADD_ADVISOR"
               ? row.advisorId === userId || isExtra(id, "ADVISOR")
-              : input.mode === "ADD_MANAGER"
-                ? flow.people.rmIds.includes(userId!) || isExtra(id, "MANAGER")
-                : input.mode === "ADD_COMMENTER"
-                  ? isExtra(id, "COMMENTER")
-                  : input.mode === "REMOVE_ADVISOR"
-                    ? !isExtra(id, "ADVISOR")
-                    : input.mode === "REMOVE_MANAGER"
-                      ? !isExtra(id, "MANAGER")
-                      : !isExtra(id, "COMMENTER");
+              : input.mode === "ADD_COMMENTER"
+                ? isExtra(id, "COMMENTER")
+                : input.mode === "REMOVE_ADVISOR"
+                  ? !isExtra(id, "ADVISOR")
+                  : !isExtra(id, "COMMENTER");
     if (already) {
       out.unchanged++;
       continue;
@@ -100,10 +92,8 @@ export async function bulkAssign(
       else if (input.mode === "MANAGER") await setLetterRegistrationManager(actor, id, userId, db);
       else if (input.mode === "MANAGER_CLEAR") await setLetterRegistrationManager(actor, id, null, db);
       else if (input.mode === "ADD_ADVISOR") await addLetterPerson(actor, id, userId!, "ADVISOR", db);
-      else if (input.mode === "ADD_MANAGER") await addLetterPerson(actor, id, userId!, "MANAGER", db);
       else if (input.mode === "ADD_COMMENTER") await addLetterPerson(actor, id, userId!, "COMMENTER", db);
       else if (input.mode === "REMOVE_ADVISOR") await removeLetterPerson(actor, id, userId!, "ADVISOR", db);
-      else if (input.mode === "REMOVE_MANAGER") await removeLetterPerson(actor, id, userId!, "MANAGER", db);
       else await removeLetterPerson(actor, id, userId!, "COMMENTER", db);
       out.changed++;
     } catch (err) {

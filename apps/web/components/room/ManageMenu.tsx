@@ -24,7 +24,7 @@ export function ManageMenu({ room }: { room: RoomProps }) {
   const [open, setOpen] = useState<Item | null>(null);
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const hasPeople = room.addable.advisors.length + room.addable.managers.length + room.addable.commenters.length > 0;
+  const hasPeople = room.addable.advisors.length + room.addable.commenters.length > 0;
   const items: { key: Item; label: string; icon: React.ReactNode; show: boolean }[] = [
     { key: "remind", label: "תזכיר", icon: <Bell aria-hidden className="size-4" />, show: can.remind && room.holderNames.length > 0 },
     { key: "reset", label: "אשרו מחדש", icon: <RefreshCcw aria-hidden className="size-4" />, show: can.resetApprovals },
@@ -142,16 +142,15 @@ export function ManageMenu({ room }: { room: RoomProps }) {
   );
 }
 
-/** Another advisor (prepares and fixes like the main one), another manager (reviews as registration manager) or a commenter (looks and comments only). */
+/** Another advisor (prepares and fixes like the main one) or a commenter (looks, comments and suggests; approves nothing). */
 function PeopleManager({ room }: { room: RoomProps }) {
   const taken = new Set(room.extraPeople.map((p) => `${p.kind}:${p.userId}`));
   const groups = [
     { kind: "ADVISOR" as const, title: "יועצות נוספות", hint: "מכינות ומתקנות כמו היועצת האחראית.", people: room.addable.advisors.filter((p) => p.id !== room.advisorId) },
-    { kind: "MANAGER" as const, title: "מנהלים נוספים בסבב הבדיקה", hint: "בודקים במקום של מנהל הרישום. אחד מהם מספיק כדי להחליט.", people: room.addable.managers },
     {
       kind: "COMMENTER" as const,
       title: "מעירים",
-      hint: "רואים את המכתב ויכולים להעיר עליו. שום דבר לא מחכה להם והם לא מאשרים.",
+      hint: "רואים את המכתב, מעירים ומציעים הצעות עד האישור הסופי. לא חייבים להגיב או לאשר, והמכתב לא מחכה להם.",
       people: room.addable.commenters.filter((p) => p.id !== room.me.id),
     },
   ];
@@ -192,9 +191,9 @@ function PeopleManager({ room }: { room: RoomProps }) {
   );
 }
 
-const WHO = { ADVISOR: ["יועצת להוספה", "בחרו יועצת"], MANAGER: ["מנהל להוספה", "בחרו מנהל"], COMMENTER: ["מעיר להוספה", "בחרו מעיר"] } as const;
+const WHO = { ADVISOR: ["יועצת להוספה", "בחרו יועצת"], COMMENTER: ["מעיר להוספה", "בחרו מעיר"] } as const;
 
-function AddPerson({ letterId, kind, people }: { letterId: string; kind: "ADVISOR" | "MANAGER" | "COMMENTER"; people: { id: string; name: string }[] }) {
+function AddPerson({ letterId, kind, people }: { letterId: string; kind: "ADVISOR" | "COMMENTER"; people: { id: string; name: string }[] }) {
   const [userId, setUserId] = useState("");
   return (
     <div className="flex flex-wrap items-end gap-2">

@@ -38,6 +38,8 @@ function isPng(bytes: Uint8Array) {
  * only they see until they approve or return the letter; anyone else's comment is published at once
  * and puts the letter with the advisor.
  */
+const advisorsOf = (p: { advisorId: string | null; extraAdvisorIds: readonly string[] }) => [p.advisorId, ...p.extraAdvisorIds].filter((id): id is string => Boolean(id));
+
 export async function createComment(
   actor: Actor,
   letterId: string,
@@ -98,14 +100,20 @@ export async function createComment(
         body,
         suggestion,
         publishedAt: draft ? null : new Date(),
+        advisory: ab.commentIsAdvisory,
         authorId: actor.userId,
       })
       .returning();
     await audit(tx, actor.userId, "COMMENT_CREATED", { letterId, seasonId: l.row.seasonId }, { commentId: comment!.id, draft });
-    if (!draft) {
-      if (actor.userId !== l.row.advisorId) {
+    if (ab.commentIsAdvisory) {
+      // Advice from someone attached only to look and comment: the advisors are told, but the letter
+      // stays where it is, and nothing here counts as open work that holds anything back.
+      await notify(tx, advisorsOf(l.input.people), "NEW_COMMENT", letterId, actor.userId, { commentId: comment!.id });
+    } else if (!draft) {
+      const advisors = advisorsOf(l.input.people);
+      if (!advisors.includes(actor.userId)) {
         await tx.update(letterRequests).set({ advisorHold: true }).where(eq(letterRequests.id, letterId));
-        await notify(tx, [l.row.advisorId], "NEW_COMMENT", letterId, actor.userId, { commentId: comment!.id });
+        await notify(tx, advisors, "NEW_COMMENT", letterId, actor.userId, { commentId: comment!.id });
       }
       await afterChange(tx, letterId, ab.flow, actor.userId);
     }
@@ -179,7 +187,7 @@ export async function replyToComment(actor: Actor, commentId: string, body: stri
     if (!comment.publishedAt && comment.authorId !== actor.userId) throw notFound();
     const [reply] = await tx.insert(commentReplies).values({ commentId, authorId: actor.userId, body: text }).returning();
     const earlier = await tx.select({ authorId: commentReplies.authorId }).from(commentReplies).where(eq(commentReplies.commentId, commentId));
-    await notify(tx, [comment.authorId, l.row.advisorId, ...earlier.map((r) => r.authorId)], "COMMENT_REPLY", comment.letterId, actor.userId, { commentId });
+    await notify(tx, [comment.authorId, ...advisorsOf(l.input.people), ...earlier.map((r) => r.authorId)], "COMMENT_REPLY", comment.letterId, actor.userId, { commentId });
     return reply!;
   });
 }
@@ -212,9 +220,10 @@ export async function setCommentStatus(actor: Actor, commentId: string, change: 
       .where(eq(comments.id, commentId));
     // The note is also kept in the thread, so the conversation reads in order.
     if (change.note?.trim()) await tx.insert(commentReplies).values({ commentId, authorId: actor.userId, body: change.note.trim() });
-    if (reopening) await tx.update(letterRequests).set({ advisorHold: true }).where(eq(letterRequests.id, l.row.id));
+    // Advice from a commenter never holds the letter back, not even when reopened.
+    if (reopening && !comment.advisory) await tx.update(letterRequests).set({ advisorHold: true }).where(eq(letterRequests.id, l.row.id));
     await audit(tx, actor.userId, "COMMENT_STATUS", { letterId: l.row.id, seasonId: l.row.seasonId }, { commentId, ...change });
-    await notify(tx, [comment.authorId, ...(reopening ? [l.row.advisorId] : [])], "COMMENT_STATUS", l.row.id, actor.userId, { commentId, status: change.to });
+    await notify(tx, [comment.authorId, ...(reopening ? advisorsOf(l.input.people) : [])], "COMMENT_STATUS", l.row.id, actor.userId, { commentId, status: change.to });
     await afterChange(tx, l.row.id, ab.flow, actor.userId);
   });
 }

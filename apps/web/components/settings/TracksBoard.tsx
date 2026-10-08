@@ -25,7 +25,7 @@ const MODES: { mode: BulkMode; label: string; explain: string; people: Pool | nu
   {
     mode: "MANAGER",
     label: "לקבוע מנהל רישום",
-    explain: "הוא יבדוק ויאשר את המכתבים של המסלולים האלה, במקום מנהל הרישום הנוכחי (אם יש).",
+    explain: "הוא היחיד שמאשר בשלב מנהל הרישום, במקום מנהל הרישום הנוכחי (אם יש). אנשים נוספים אפשר לצרף כמעירים.",
     people: "managers",
     verb: (who) => `לקבוע את ${who} כמנהל הרישום`,
   },
@@ -37,16 +37,9 @@ const MODES: { mode: BulkMode; label: string; explain: string; people: Pool | nu
     verb: (who) => `להוסיף את ${who} כיועצת נוספת`,
   },
   {
-    mode: "ADD_MANAGER",
-    label: "להוסיף מנהל נוסף לסבב הבדיקה",
-    explain: "עוד מנהל רישום שבודק ומאשר יחד עם הראשון. מספיק שאחד מהם יאשר.",
-    people: "managers",
-    verb: (who) => `להוסיף את ${who} כמנהל נוסף בסבב הבדיקה`,
-  },
-  {
     mode: "ADD_COMMENTER",
     label: "להוסיף מעיר (צפייה והערות, בלי אישור)",
-    explain: "האדם יראה את המכתב ויוכל להעיר עליו. שום דבר לא מחכה לו והוא לא מאשר כלום.",
+    explain: "האדם יראה את המכתב, יוכל להעיר ולהציע הצעות עד האישור הסופי. הוא לא חייב להגיב או לאשר, והמכתב לא מחכה לו.",
     people: "everyone",
     verb: (who) => `להוסיף את ${who} כמעיר (בלי אישור)`,
   },
@@ -65,13 +58,6 @@ const MODES: { mode: BulkMode; label: string; explain: string; people: Pool | nu
     verb: (who) => `להסיר את ${who} (יועצת נוספת)`,
   },
   {
-    mode: "REMOVE_MANAGER",
-    label: "להסיר מנהל נוסף",
-    explain: "מסיר מנהל רישום שצורף כנוסף. לא משנה את מנהל הרישום של המסלול.",
-    people: "managers",
-    verb: (who) => `להסיר את ${who} (מנהל נוסף)`,
-  },
-  {
     mode: "REMOVE_COMMENTER",
     label: "להסיר מעיר",
     explain: "האדם לא יראה יותר את המסלולים האלה.",
@@ -85,7 +71,7 @@ const POOL_LABEL: Record<Pool, [string, string]> = {
   managers: ["מנהל רישום", "בחרו מנהל רישום"],
   everyone: ["אדם", "בחרו אדם"],
 };
-const EXTRA_LABEL = { ADVISOR: "יועצת נוספת", MANAGER: "מנהל נוסף", COMMENTER: "מעיר (בלי אישור)" } as const;
+const EXTRA_LABEL = { ADVISOR: "יועצת נוספת", COMMENTER: "מעיר (בלי אישור)" } as const;
 
 const norm = (s: string) => s.replace(/["'׳״.\-]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 const tracksWord = (n: number) => (n === 1 ? "מסלול אחד" : `${n} מסלולים`);

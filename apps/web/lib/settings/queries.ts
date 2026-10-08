@@ -26,8 +26,8 @@ export interface TrackAssignment {
   advisor: PersonRef | null;
   /** The track's registration manager; null until assigned. */
   manager: PersonRef | null;
-  /** More advisors and managers, and the commenters attached to the track. */
-  extras: (PersonRef & { kind: "ADVISOR" | "MANAGER" | "COMMENTER" })[];
+  /** More advisors, and the commenters attached to the track. */
+  extras: (PersonRef & { kind: "ADVISOR" | "COMMENTER" })[];
   /** Nobody can prepare the letter: it cannot move until an advisor is assigned. */
   missingAdvisor: boolean;
   /** Nobody can review in the registration manager's place: the letter cannot be sent to review. */
@@ -68,7 +68,6 @@ export async function getTrackBoard(actor: Actor, seasonId: string, db: Db = get
     const mainManager = row.registrationManagerId;
     const extras = [
       ...input.people.extraAdvisorIds.map((id) => ({ ...ref(byId, id), kind: "ADVISOR" as const })),
-      ...input.people.rmIds.filter((id) => id !== mainManager).map((id) => ({ ...ref(byId, id), kind: "MANAGER" as const })),
       ...input.people.commenterIds.map((id) => ({ ...ref(byId, id), kind: "COMMENTER" as const })),
     ];
     const advisorOk = row.advisorId !== null && holds(byId.get(row.advisorId), "CONTROL_ADVISOR");

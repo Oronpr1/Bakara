@@ -283,6 +283,8 @@ export interface RoomComment {
   authorName: string;
   /** A draft: only its author sees it, until they approve or return the letter. */
   isDraft: boolean;
+  /** Advice from someone attached only to comment: nothing waits on it. */
+  advisory: boolean;
   hasSnapshot: boolean;
   createdAt: Date;
   replies: { id: string; authorName: string; body: string; createdAt: Date }[];
@@ -331,7 +333,7 @@ export interface LetterRoom {
   /** For reassigning the advisor (only when the actor may). */
   advisors: { id: string; name: string }[];
   /** More people the control manager added to this track. */
-  extraPeople: { userId: string; name: string; kind: "ADVISOR" | "MANAGER" | "COMMENTER" }[];
+  extraPeople: { userId: string; name: string; kind: "ADVISOR" | "COMMENTER" }[];
   /** Everyone who can be added to a track (only when the actor may manage people). */
   addable: { advisors: { id: string; name: string }[]; managers: { id: string; name: string }[]; commenters: { id: string; name: string }[] };
   /** Who the registration manager(s) of this letter are right now. */
@@ -408,6 +410,7 @@ export async function getLetterRoom(actor: Actor, letterId: string, db: Db = get
       authorId: c.authorId,
       authorName: nameOf(c.authorId) ?? "—",
       isDraft: !c.publishedAt,
+      advisory: c.advisory,
       hasSnapshot: Boolean(c.snapshotKey),
       createdAt: c.createdAt,
       replies: replies.get(c.id) ?? [],

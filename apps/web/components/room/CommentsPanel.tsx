@@ -266,6 +266,7 @@ function CommentCard({
         </div>
         {c.isDraft ? <Tag tone="accent">טיוטה</Tag> : <CommentStatusPill status={c.status} />}
       </div>
+      {c.advisory && <p className="text-xs font-semibold text-muted">הצעה של מעיר: אפשר לטפל בה, ואין חובה. היא לא מעכבת את המכתב.</p>}
 
       {c.body ? (
         <p className="whitespace-pre-wrap break-words">{c.body}</p>

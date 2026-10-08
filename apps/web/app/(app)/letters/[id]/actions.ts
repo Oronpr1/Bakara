@@ -119,7 +119,7 @@ export async function changeAdvisorAction(_prev: ActionResult, form: FormData): 
   return runAction(z.object({ letterId, advisorId: pick("יועצת") }), formObject(form), (actor, d) => changeAdvisor(actor, d.letterId, d.advisorId), paths, "היועצת הוחלפה");
 }
 
-const kind = z.enum(["ADVISOR", "MANAGER", "COMMENTER"]);
+const kind = z.enum(["ADVISOR", "COMMENTER"]);
 
 export async function addPersonAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(

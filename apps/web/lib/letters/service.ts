@@ -233,12 +233,12 @@ export async function setLetterRegistrationManager(actor: Actor, letterId: strin
   });
 }
 
-export type LetterPersonKind = "ADVISOR" | "MANAGER" | "COMMENTER";
+export type LetterPersonKind = "ADVISOR" | "COMMENTER";
 
 /**
  * More people on one track, at the control manager's discretion: another advisor (prepares and
- * fixes like the main one), another manager (reviews in the registration manager's seat) or a
- * commenter (looks and comments; nothing waits for them and they approve nothing).
+ * fixes like the main one) or a commenter (looks, comments and suggests; nothing waits for them and
+ * they approve nothing). The registration manager who approves is the track's own, set separately.
  */
 export async function addLetterPerson(actor: Actor, letterId: string, userId: string, kind: LetterPersonKind, db: Db = getDb()) {
   if (!canGlobal(actor, "MANAGE_UNITS")) throw forbidden();
@@ -246,7 +246,7 @@ export async function addLetterPerson(actor: Actor, letterId: string, userId: st
     if (kind === "COMMENTER") {
       const [u] = await tx.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.active, true)));
       if (!u) throw new AppError("INVALID", "המשתמש שנבחר לא פעיל");
-    } else await assertRole(tx, [userId], kind === "ADVISOR" ? "CONTROL_ADVISOR" : "REGISTRATION_MANAGER");
+    } else await assertRole(tx, [userId], "CONTROL_ADVISOR");
     await tx.insert(letterPeople).values({ letterId, userId, kind, addedBy: actor.userId }).onConflictDoNothing();
     await audit(tx, actor.userId, "PERSON_ADDED", { letterId, seasonId: l.row.seasonId }, { userId, kind });
     await notify(tx, [userId], kind === "COMMENTER" ? "ADDED_TO_LETTER" : "YOUR_TURN", letterId, actor.userId);

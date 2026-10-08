@@ -55,6 +55,8 @@ export interface Abilities {
   overrideOpenComments: boolean;
   /** The acting person is the control manager standing in for someone. */
   actsForOthers: boolean;
+  /** What this person comments is advice only: it holds the letter back from no one and does not count as open work. */
+  commentIsAdvisory: boolean;
   /** The flow view, so a screen does not compute it twice. */
   flow: FlowView;
 }
@@ -119,6 +121,7 @@ export function abilities(actor: Actor, input: FlowInput): Abilities {
     remind: canSee && allowed(actor, "REMIND") && phase !== "APPROVED" && phase !== "DRAFT",
     overrideOpenComments: canSee && allowed(actor, "OVERRIDE_OPEN_COMMENTS"),
     actsForOthers: actsFor && !advisor,
+    commentIsAdvisory: commenter && !advisor && !rm && !vp && !academic && !actsFor && !seeAll,
     flow: view,
   };
 }

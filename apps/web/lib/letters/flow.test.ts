@@ -322,18 +322,20 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     expect(v.holder.userIds).toEqual([ppl.vp!.userId]);
   });
 
-  it("extra people on a track share it: another advisor prepares, another manager reviews", async () => {
+  it("a second advisor shares a track; only the track's own manager approves, anyone else attached cannot", async () => {
     const id = await makeLetter("4");
     await expect(addLetterPerson(ppl.adv!, id, ppl.adv2!.userId, "ADVISOR")).rejects.toThrow(); // only the control manager
     await addLetterPerson(ppl.cm!, id, ppl.adv2!.userId, "ADVISOR");
-    await addLetterPerson(ppl.cm!, id, ppl.rm2!.userId, "MANAGER");
+    await addLetterPerson(ppl.cm!, id, ppl.rm2!.userId, "COMMENTER");
     expect((await listLetters(ppl.adv2!, seasonId)).some((l) => l.id === id)).toBe(true);
     expect((await listLetters(ppl.rm2!, seasonId)).some((l) => l.id === id)).toBe(true);
-    await decideLetter(ppl.rm2!, id, { seat: "RM", kind: "CHANGES", note: "לתקן" }); // a second manager may decide
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId]); // the review waits for the track's manager only
+    await expect(decideLetter(ppl.rm2!, id, { seat: "RM", kind: "CHANGES", note: "לתקן" })).rejects.toThrow();
+    await decideLetter(ppl.rm!, id, { seat: "RM", kind: "CHANGES", note: "לתקן" });
     expect((await viewOf(id)).holder.userIds).toEqual([ppl.adv!.userId, ppl.adv2!.userId]);
     await uploadVersion(ppl.adv2!, id, { docx, pdf: await pdf() }); // the other advisor fixes
     await resubmitLetter(ppl.adv2!, id);
-    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId, ppl.rm2!.userId]);
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId]);
   });
 
   it("a commenter attached to a track sees it and comments, nothing waits for them, and the control manager can remove them", async () => {
@@ -343,13 +345,24 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
     await addLetterPerson(ppl.cm!, id, ppl.dean!.userId, "COMMENTER");
     expect((await notes(ppl.dean!.userId, "ADDED_TO_LETTER")).length).toBe(1);
     const room = await getLetterRoom(ppl.dean!, id);
-    expect(room.can).toMatchObject({ view: true, comment: true, reply: true });
+    expect(room.can).toMatchObject({ view: true, comment: true, reply: true, commentIsAdvisory: true });
     expect(room.can.decide).toEqual([]);
     expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId]); // still the manager's turn, not theirs
-    const c = await createComment(ppl.dean!, id, { anchor: anchor(), body: "שימו לב לתאריך" });
+    const c = await createComment(ppl.dean!, id, { anchor: anchor(), body: "שימו לב לתאריך", suggestion: "במקום 8.11 כתבו 9.11" });
+    expect(c).toMatchObject({ advisory: true, suggestion: "במקום 8.11 כתבו 9.11" });
     expect(c.publishedAt).not.toBeNull(); // no draft: a commenter's mark is published at once
-    expect((await viewOf(id)).holder.userIds).toEqual([ppl.adv!.userId]); // it gives the advisor something to fix
+    // Advice holds nothing back: the letter is still with the manager, and no open work is counted.
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId]);
+    expect((await loadLetter(getDb(), id)).input.openComments).toBe(0);
+    expect((await notes(ppl.adv!.userId, "NEW_COMMENT")).length).toBeGreaterThan(0); // but the advisor is told
     await expect(decideLetter(ppl.dean!, id, { seat: "RM", kind: "APPROVED" })).rejects.toThrow();
+    // The manager can approve while the advice is still open; the advisor may answer it at her leisure.
+    await setCommentStatus(ppl.adv!, c.id, { to: "RESOLVED_FIXED" });
+    // Reopening it does not pull the letter back either.
+    await setCommentStatus(ppl.dean!, c.id, { to: "OPEN" });
+    expect((await viewOf(id)).holder.userIds).toEqual([ppl.rm!.userId]);
+    const own = await createComment(ppl.rm!, id, { anchor: anchor(), body: "הערה של המנהל" }); // a real reviewer's comment still holds it back
+    expect(own.advisory).toBe(false);
     await removeLetterPerson(ppl.cm!, id, ppl.dean!.userId, "COMMENTER");
     await expect(getLetterRoom(ppl.dean!, id)).rejects.toThrow();
   });
@@ -364,7 +377,7 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
 
   it("copying a season keeps each track's own people, for whoever is still active", async () => {
     const id = await makeLetter("11");
-    await addLetterPerson(ppl.cm!, id, ppl.rm2!.userId, "MANAGER");
+    await addLetterPerson(ppl.cm!, id, ppl.adv2!.userId, "ADVISOR");
     await addLetterPerson(ppl.cm!, id, ppl.dean!.userId, "COMMENTER");
     const next = await createSeason(ppl.cm!, { name: `עונה הבאה ${tag2}`, copyFromSeasonId: seasonId, codeFrom: "227", codeTo: "228" });
     const db = getDb();
@@ -372,7 +385,7 @@ describe.skipIf(!process.env.DATABASE_URL)("overrides and the awkward cases", ()
       const copied = (await db.select().from(schema.letterRequests).where(eq(schema.letterRequests.seasonId, next.id))).find((r) => r.trackNumber === "2280011")!;
       expect(copied).toMatchObject({ advisorId: ppl.adv!.userId, registrationManagerId: ppl.rm!.userId, phase: "DRAFT", latestVersion: 0 });
       const extras = await db.select().from(schema.letterPeople).where(eq(schema.letterPeople.letterId, copied.id));
-      expect(extras.map((e) => `${e.kind}:${e.userId}`).sort()).toEqual([`COMMENTER:${ppl.dean!.userId}`, `MANAGER:${ppl.rm2!.userId}`].sort());
+      expect(extras.map((e) => `${e.kind}:${e.userId}`).sort()).toEqual([`ADVISOR:${ppl.adv2!.userId}`, `COMMENTER:${ppl.dean!.userId}`].sort());
     } finally {
       await db.delete(schema.letterRequests).where(eq(schema.letterRequests.seasonId, next.id));
       await db.delete(schema.seasons).where(eq(schema.seasons.id, next.id));

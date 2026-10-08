@@ -148,9 +148,9 @@ export const letterRequests = pgTable(
 
 /**
  * Extra people on one track, added by the control manager at her discretion: more advisors
- * (they prepare and fix the letter like the main one), more managers (they review in the
- * registration manager's seat; any one of them may decide) and commenters (they may look at the
- * letter and comment, but nothing waits for them and they approve nothing).
+ * (they prepare and fix the letter like the main one) and commenters (they may look at the letter,
+ * comment and suggest until it is finally approved, but nothing waits for them and they approve
+ * nothing). Only the track's own registration manager approves in that seat.
  */
 export const letterPeople = pgTable(
   "letter_people",
@@ -158,7 +158,7 @@ export const letterPeople = pgTable(
     id: id(),
     letterId: uuid("letter_id").notNull().references(() => letterRequests.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull().references(() => users.id),
-    kind: text("kind", { enum: ["ADVISOR", "MANAGER", "COMMENTER"] }).notNull(),
+    kind: text("kind", { enum: ["ADVISOR", "COMMENTER"] }).notNull(),
     addedBy: uuid("added_by").references(() => users.id),
     createdAt: createdAt(),
   },
@@ -251,6 +251,8 @@ export const comments = pgTable(
     suggestion: text("suggestion"),
     /** A reviewer's comments stay drafts (seen only by the author) until their decision publishes them. */
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    /** Written by someone attached only to look and comment: advice, which holds nothing back and is not counted as open work. */
+    advisory: boolean("advisory").notNull().default(false),
     authorId: uuid("author_id").notNull().references(() => users.id),
     status: commentStatusEnum("status").notNull().default("OPEN"),
     statusNote: text("status_note"),

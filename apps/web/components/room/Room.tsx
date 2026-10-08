@@ -87,8 +87,9 @@ export function Room({ room, choices, wordSlot }: { room: RoomProps; choices: { 
 
   const canComment = room.can.comment;
   const isAdvisor = room.me.id === room.advisorId || room.extraPeople.some((p) => p.kind === "ADVISOR" && p.userId === room.me.id);
-  const draftNotice =
-    room.can.decide.length > 0
+  const draftNotice = room.can.commentIsAdvisory
+    ? "ההערה תתפרסם מיד ותגיע ליועצת. אין חובה להגיב או לאשר, והמכתב לא מחכה לך."
+    : room.can.decide.length > 0
       ? "ההערה נשמרת כטיוטה. היא תפורסם כשתחליט (אשר או החזר לתיקון)."
       : isAdvisor
         ? "ההערה תתפרסם מיד."

@@ -240,6 +240,8 @@ describe("people and edge cases", () => {
     expect(a.reply).toBe(true);
     expect(a.decide).toEqual([]);
     expect(a.submit).toBe(false);
+    expect(a.commentIsAdvisory).toBe(true); // advice: it holds nothing back
+    expect(abilities({ userId: "oron", roles: [] as never[] }, withCommenter).commentIsAdvisory).toBe(false); // the track's own manager's comments are real review
     expect(flowView(withCommenter).seats.flatMap((s) => s.holderIds)).not.toContain("dean");
     // Somebody who is not on the track still cannot see it.
     expect(abilities({ userId: "other", roles: [] as never[] }, withCommenter).view).toBe(false);

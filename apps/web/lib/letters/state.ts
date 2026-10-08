@@ -61,7 +61,7 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
   const commentRows = await tx
     .select({ letterId: comments.letterId, n: sql<number>`count(*)::int` })
     .from(comments)
-    .where(and(inArray(comments.letterId, ids), sql`${comments.publishedAt} is not null`, inArray(comments.status, ["OPEN", "NEEDS_CLARIFICATION"])))
+    .where(and(inArray(comments.letterId, ids), sql`${comments.publishedAt} is not null`, eq(comments.advisory, false), inArray(comments.status, ["OPEN", "NEEDS_CLARIFICATION"])))
     .groupBy(comments.letterId);
 
   const seasonOf = new Map(seasonRows.map((s) => [s.id, s]));
@@ -89,7 +89,7 @@ async function buildInputs(tx: Tx, rows: LetterRow[]): Promise<LoadedLetter[]> {
       people: {
         advisorId: row.advisorId,
         extraAdvisorIds: extra.filter((e) => e.kind === "ADVISOR").map((e) => e.userId),
-        rmIds: [...(rm ? [rm] : []), ...extra.filter((e) => e.kind === "MANAGER").map((e) => e.userId)],
+        rmIds: rm ? [rm] : [],
         commenterIds: extra.filter((e) => e.kind === "COMMENTER").map((e) => e.userId),
         vpIds: system.vpIds,
         controlIds: system.controlIds,

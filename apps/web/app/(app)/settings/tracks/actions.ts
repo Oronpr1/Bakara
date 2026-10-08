@@ -97,7 +97,7 @@ export async function bulkAssignAction(_prev: BulkState, form: FormData): Promis
 /** Takes one extra person off one track. */
 export async function removeExtraAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   return runAction(
-    z.object({ letterId: z.uuid(), userId: z.uuid(), kind: z.enum(["ADVISOR", "MANAGER", "COMMENTER"]) }),
+    z.object({ letterId: z.uuid(), userId: z.uuid(), kind: z.enum(["ADVISOR", "COMMENTER"]) }),
     formObject(form),
     (actor, d) => removeLetterPerson(actor, d.letterId, d.userId, d.kind),
     PATHS,
